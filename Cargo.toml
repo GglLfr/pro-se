@@ -1,0 +1,27 @@
+[package]
+name = "lawful-knight"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies.bevy]
+version = "0.18"
+default-features = false
+features = [
+    "default_app",
+    "default_platform",
+
+    "picking",
+    "2d_bevy_render",
+    "ui_bevy_render",
+]
+
+[dependencies]
+bevy_asset_loader = { version = "0.25", features = ["progress_tracking"] }
+
+async-channel = "2"
+bitflags = "2"
+bytemuck = { version = "1", features = ["latest_stable_rust"] }
+guillotiere = "0.6"
+iyes_progress = { version = "0.16", features = ["assets", "async"] }
+smallvec = { version = "1", features = ["const_new", "union"] }
+vec-belt = "1"
