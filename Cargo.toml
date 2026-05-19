@@ -6,26 +6,34 @@ edition = "2024"
 [dependencies]
 mimalloc-redirect = "*"
 
-#[dependencies.avian3d]
-#version = "0.7.0-dev"
+[dependencies.avian3d]
+version = "0.6.1"
 #git = "https://github.com/Jondolf/avian.git"
-#default-features = false
-#features = [
-#"3d",
-#"f32",
-#"parry-f32",
-#"xpbd_joints",
-#"parallel",
-#"bevy_scene",
-#"bevy_picking",
-#"simd",
-#]
+default-features = false
+features = [
+    "3d",
+    "f32",
+    "parry-f32",
+    "xpbd_joints",
+    "parallel",
+    "bevy_scene",
+    "bevy_picking",
+    "simd",
+]
 
 [dependencies.bevy]
-version = "0.19.0-rc.1"
+version = "0.18.1"
 default-features = false
-features = ["3d", "ui"]
+features = [
+    "default_app",
+    "default_platform",
+    "3d_bevy_render",
+    "ui",
+    "scene",
+    "picking",
+    "ui",
+]
 
 [features]
 default = ["dev"]
-dev = ["bevy/dev"]
+dev = ["avian3d/debug-plugin", "bevy/dev"]

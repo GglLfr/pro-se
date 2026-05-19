@@ -2,7 +2,7 @@ pub mod prelude {
     pub use bevy::{
         ecs::{lifecycle::HookContext, query::QueryData, world::DeferredWorld},
         prelude::*,
-        render::render_resource::TextureUsages,
+        render::{render_resource::TextureUsages, view::Hdr},
     };
     pub use mimalloc_redirect::MiMalloc;
 }
@@ -13,7 +13,7 @@ pub mod camera;
 pub mod environment;
 
 #[derive(Reflect, States, Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[reflect(State, Debug, Default, Clone, PartialEq, PartialOrd, Hash)]
+#[reflect(State, Debug, Default, Clone, PartialEq, /*TODO 0.19 PartialOrd,*/ Hash)]
 pub enum GameState {
     #[default]
     Init,

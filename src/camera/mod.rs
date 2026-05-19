@@ -8,10 +8,7 @@ pub(super) fn plugin(app: &mut App) {
 pub fn spawn_camera(mut commands: Commands) {
     commands.spawn((
         IsDefaultUiCamera,
-        Camera3d {
-            depth_load_op: default(),
-            depth_texture_usages: TextureUsages::RENDER_ATTACHMENT.into(),
-        },
+        Camera3d::default(),
         AmbientLight {
             color: Color::WHITE,
             brightness: 0.4,
@@ -22,6 +19,7 @@ pub fn spawn_camera(mut commands: Commands) {
             intensity: 4_000_000.0,
             ..default()
         },
+        Hdr,
         Transform::from_xyz(0., 0., 30.).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 }
