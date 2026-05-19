@@ -1,67 +1,88 @@
-pub mod render;
-
 pub mod prelude {
-    pub use std::{
-        fmt::{self, Debug},
-        hash::{Hash, Hasher},
-        mem::{self, offset_of},
-        ops::Range,
-    };
-
     pub use bevy::{
-        asset::{AssetLoader, LoadContext, RenderAssetUsages, io::Reader},
-        camera::visibility::{VisibilityClass, add_visibility_class},
-        core_pipeline::{
-            core_2d::{CORE_2D_DEPTH_FORMAT, Transparent2d},
-            tonemapping::{DebandDither, Tonemapping, TonemappingLuts, get_lut_bind_group_layout_entries, get_lut_bindings},
-        },
-        ecs::{
-            query::ROQueryItem,
-            system::{
-                SystemParam, SystemParamItem, SystemState,
-                lifetimeless::{Read, SRes},
-            },
-        },
-        image::{ImageLoader, ImageLoaderSettings},
-        math::{Affine2, FloatOrd},
-        mesh::{PrimitiveTopology, VertexBufferLayout, VertexFormat},
-        platform::collections::HashMap,
+        ecs::{lifecycle::HookContext, query::QueryData, world::DeferredWorld},
         prelude::*,
-        render::{
-            Extract, MainWorld, Render, RenderApp, RenderStartup, RenderSystems,
-            render_asset::RenderAssets,
-            render_phase::{
-                AddRenderCommand as _, DrawFunctions, PhaseItem, PhaseItemExtraIndex, RenderCommand, RenderCommandResult, SetItemPipeline,
-                TrackedRenderPass, ViewSortedRenderPhases,
-            },
-            render_resource::{
-                BindGroup, BindGroupEntries, BindGroupLayoutDescriptor, BindGroupLayoutEntries, BlendComponent, BlendFactor, BlendOperation,
-                BlendState, Buffer, BufferAddress, BufferDescriptor, BufferUsages, COPY_BUFFER_ALIGNMENT, ColorTargetState, ColorWrites,
-                CompareFunction, DepthBiasState, DepthStencilState, Extent3d, FragmentState, FrontFace, IndexFormat, MultisampleState, Origin3d,
-                PipelineCache, PolygonMode, PrimitiveState, RawBufferVec, RenderPipelineDescriptor, SamplerBindingType, ShaderStages,
-                SpecializedRenderPipeline, SpecializedRenderPipelines, StencilFaceState, StencilState, TexelCopyBufferLayout, TexelCopyTextureInfo,
-                TextureAspect, TextureDimension, TextureFormat, TextureSampleType, VertexAttribute, VertexState, VertexStepMode,
-                binding_types::{sampler, texture_2d, uniform_buffer},
-            },
-            renderer::{RenderDevice, RenderQueue},
-            sync_component::SyncComponentPlugin,
-            sync_world::RenderEntity,
-            texture::{FallbackImage, GpuImage},
-            view::{ExtractedView, RenderVisibleEntities, RetainedViewEntity, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms},
-        },
-        shader::ShaderDefVal,
-        sprite::Anchor,
-        sprite_render::SpritePipelineKey,
-        tasks::ComputeTaskPool,
+        render::render_resource::TextureUsages,
     };
-    pub use bitflags::{bitflags, bitflags_match};
-    pub use bytemuck::{Pod, Zeroable, must_cast_slice as cast_slice};
-    pub use smallvec::SmallVec;
-    pub use vec_belt::{Transfer, VecBelt};
+    pub use mimalloc_redirect::MiMalloc;
 }
 
 use prelude::*;
 
+pub mod camera;
+pub mod environment;
+
+#[derive(Reflect, States, Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[reflect(State, Debug, Default, Clone, PartialEq, PartialOrd, Hash)]
+pub enum GameState {
+    #[default]
+    Init,
+    Menu,
+    Load,
+    InGame,
+}
+
+#[global_allocator]
+static ALLOC: MiMalloc = MiMalloc;
+
+fn report_mimalloc_version(_: &mut App) {
+    info!("Using MiMalloc {}.", MiMalloc::get_version());
+}
+
 fn main() -> AppExit {
-    App::new().add_plugins((DefaultPlugins, render::plugin)).run()
+    App::new()
+        .add_plugins((DefaultPlugins, report_mimalloc_version, (camera::plugin, environment::plugin)))
+        .init_state::<GameState>()
+        .add_systems(Startup, game_init)
+        .run()
+}
+
+fn game_init(
+    mut commands: Commands,
+    mut next: ResMut<NextState<GameState>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    next.set(GameState::InGame);
+    let blocks = [
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 3, 0],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1],
+        [1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    ];
+
+    let cube = meshes.add(Cuboid::from_size(Vec3::ONE).mesh());
+    let material = materials.add(StandardMaterial::default());
+
+    let start_y = (blocks.len() - 1) as f32 / 2.;
+    for (dy, row) in blocks.into_iter().enumerate() {
+        let start_x = (row.len() - 1) as f32 / -2.;
+        for (dx, block) in row.into_iter().enumerate() {
+            match block {
+                0 => {}
+                1 => {
+                    commands.spawn((
+                        Transform::from_xyz(start_x + dx as f32, start_y - dy as f32, 0.),
+                        Mesh3d(cube.clone()),
+                        MeshMaterial3d(material.clone()),
+                    ));
+                }
+                2 => {}
+                3 => {}
+                unknown => panic!("Unknown block {unknown}"),
+            }
+        }
+    }
 }

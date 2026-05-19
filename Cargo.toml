@@ -3,25 +3,29 @@ name = "lawful-knight"
 version = "0.1.0"
 edition = "2024"
 
-[dependencies.bevy]
-version = "0.18"
-default-features = false
-features = [
-    "default_app",
-    "default_platform",
-
-    "picking",
-    "2d_bevy_render",
-    "ui_bevy_render",
-]
-
 [dependencies]
-bevy_asset_loader = { version = "0.25", features = ["progress_tracking"] }
+mimalloc-redirect = "*"
 
-async-channel = "2"
-bitflags = "2"
-bytemuck = { version = "1", features = ["latest_stable_rust"] }
-guillotiere = "0.6"
-iyes_progress = { version = "0.16", features = ["assets", "async"] }
-smallvec = { version = "1", features = ["const_new", "union"] }
-vec-belt = "1"
+#[dependencies.avian3d]
+#version = "0.7.0-dev"
+#git = "https://github.com/Jondolf/avian.git"
+#default-features = false
+#features = [
+#"3d",
+#"f32",
+#"parry-f32",
+#"xpbd_joints",
+#"parallel",
+#"bevy_scene",
+#"bevy_picking",
+#"simd",
+#]
+
+[dependencies.bevy]
+version = "0.19.0-rc.1"
+default-features = false
+features = ["3d", "ui"]
+
+[features]
+default = ["dev"]
+dev = ["bevy/dev"]
