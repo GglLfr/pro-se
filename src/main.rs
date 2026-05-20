@@ -3,7 +3,7 @@ pub mod prelude {
     pub use bevy::{
         camera::{
             CameraUpdateSystems, RenderTarget,
-            primitives::Aabb,
+            primitives::{Aabb, Frustum},
             visibility::{RenderLayers, VisibilitySystems},
         },
         ecs::{lifecycle::HookContext, query::QueryData, world::DeferredWorld},

@@ -9,5 +9,3 @@ pub struct PrimaryCamera;
 #[reflect(Component, Debug, Default, Clone)]
 #[require(Camera3d, Hdr)]
 pub struct GameCamera;
-
-pub const CAMERA_LAYER_RESERVE: usize = 16;

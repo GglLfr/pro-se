@@ -1,28 +1,43 @@
+use bevy::ecs::{
+    change_detection::{MaybeLocation, Tick},
+    system::lifetimeless::Write,
+};
+
 use crate::{camera::GameCamera, prelude::*};
 
 pub(super) fn plugin(app: &mut App) {
-    app.configure_sets(PostUpdate, PooledCameraUpdateSystems.after(CameraUpdateSystems))
-        .add_systems(PostUpdate, pooled_camera_system.in_set(PooledCameraUpdateSystems));
+    app.init_resource::<CameraPool>()
+        .configure_sets(
+            PostUpdate,
+            (
+                PooledCameraSystems::Obtain
+                    .after(CameraUpdateSystems)
+                    .after(VisibilitySystems::UpdateFrusta),
+                PooledCameraSystems::Update.before(VisibilitySystems::CheckVisibility),
+            )
+                .chain(),
+        )
+        .add_systems(PreUpdate, free_pooled_cameras)
+        .add_systems(PostUpdate, pooled_camera_system.in_set(PooledCameraSystems::Update));
 }
 
+pub const CAMERA_LAYER_RESERVE: usize = 16;
+
 #[derive(Reflect, Component, Debug, Default, Clone, Copy)]
 #[reflect(Component, Debug, Default, Clone)]
-#[require(GameCamera, PooledCameraDirty)]
+#[require(GameCamera)]
 pub struct PooledCamera;
 
-#[derive(Reflect, Component, Debug, Default, Clone, Copy)]
-#[reflect(Component, Debug, Default, Clone)]
-#[component(storage = "SparseSet")]
-pub struct PooledCameraDirty;
-
-#[derive(Reflect, SystemSet, Debug, Default, Clone, Eq, PartialEq, Hash)]
-#[reflect(Debug, Default, Clone, PartialEq, Hash)]
-pub struct PooledCameraUpdateSystems;
+#[derive(Reflect, SystemSet, Debug, Clone, Eq, PartialEq, Hash)]
+#[reflect(Debug, Clone, PartialEq, Hash)]
+pub enum PooledCameraSystems {
+    Obtain,
+    Update,
+}
 
 /// Calls `camera_system` for newly pooled cameras, since oftentimes pooled cameras are obtained
 /// after the primary camera is updated.
 pub fn pooled_camera_system(
-    mut commands: Commands,
     window_resized_reader: MessageReader<WindowResized>,
     window_created_reader: MessageReader<WindowCreated>,
     window_scale_factor_changed_reader: MessageReader<WindowScaleFactorChanged>,
@@ -31,12 +46,12 @@ pub fn pooled_camera_system(
     windows: Query<(Entity, &Window)>,
     images: Res<Assets<Image>>,
     manual_texture_views: Res<ManualTextureViews>,
-    mut cameras: Query<(Entity, &mut Camera, &RenderTarget, &mut Projection), (With<PooledCamera>, With<PooledCameraDirty>)>,
+    mut cameras: Query<(Entity, Ref<GlobalTransform>, &mut Frustum, &mut Camera, &RenderTarget, &mut Projection), With<PooledCamera>>,
 ) -> Result {
-    // If the camera isn't despawned the next frame, it'll be updated by the regular `camera_system`
-    // function, so make sure we don't update them twice.
-    for (e, ..) in &cameras {
-        commands.entity(e).remove::<PooledCameraDirty>();
+    for (_, trns, mut frustum, _, _, projection) in &mut cameras {
+        if trns.is_changed() || projection.is_changed() {
+            *frustum = projection.compute_frustum(&*trns);
+        }
     }
 
     camera_system(
@@ -50,4 +65,95 @@ pub fn pooled_camera_system(
         manual_texture_views,
         cameras.transmute_lens::<(&mut Camera, &RenderTarget, &mut Projection)>().query(),
     )
+}
+
+#[derive(Reflect, Resource, Debug)]
+#[reflect(Resource, Debug, Default)]
+pub struct CameraPool {
+    allocated: Vec<Entity>,
+    free: Vec<Entity>,
+}
+
+impl Default for CameraPool {
+    fn default() -> Self {
+        Self {
+            allocated: vec![],
+            free: vec![],
+        }
+    }
+}
+
+pub fn free_pooled_cameras(pool: ResMut<CameraPool>, mut cameras: Query<&mut Camera>) {
+    let pool = pool.into_inner();
+    let mut iter = cameras.iter_many_mut(&pool.allocated);
+    while let Some(mut camera) = iter.fetch_next() {
+        //TODO more stuff needs to be fixed
+        //camera.is_active = false;
+    }
+
+    pool.free.append(&mut pool.allocated);
+}
+
+#[derive(QueryData)]
+#[query_data(mutable)]
+pub struct CameraPoolQuery {
+    pub entity: Entity,
+    pub camera: Write<Camera>,
+    pub projection: Write<Projection>,
+}
+
+impl CameraPool {
+    pub fn obtain<T>(
+        &mut self,
+        commands: &mut Commands,
+        query: &mut Query<CameraPoolQuery>,
+        apply: impl FnOnce(&mut Commands, CameraPoolQueryItem) -> T,
+    ) -> Result<T> {
+        if let Some(e) = self.free.pop() {
+            self.allocated.push(e);
+
+            let mut item = query.get_mut(e)?;
+            item.camera.is_active = true;
+            Ok(apply(commands, item))
+        } else {
+            let count = self.allocated.len() + self.free.len();
+            let mut camera = Camera {
+                order: (-1isize).saturating_sub_unsigned(count),
+                ..default()
+            };
+            let mut projection = Projection::default();
+
+            let entity = commands.spawn_empty().id();
+            self.allocated.push(entity);
+
+            let result = apply(commands, CameraPoolQueryItem {
+                entity,
+                camera: Mut::new(
+                    &mut camera,
+                    &mut Tick::new(0),
+                    &mut Tick::new(0),
+                    Tick::new(0),
+                    Tick::new(0),
+                    MaybeLocation::caller().as_mut(),
+                ),
+                projection: Mut::new(
+                    &mut projection,
+                    &mut Tick::new(0),
+                    &mut Tick::new(0),
+                    Tick::new(0),
+                    Tick::new(0),
+                    MaybeLocation::caller().as_mut(),
+                ),
+            });
+
+            commands.entity(entity).insert((
+                PooledCamera,
+                RenderTarget::Window(bevy::window::WindowRef::Primary),
+                RenderLayers::from_layers(&[0, CAMERA_LAYER_RESERVE + count]),
+                camera,
+                projection,
+            ));
+            Ok(result)
+        }
+    }
 }

@@ -7,7 +7,7 @@ pub(super) fn plugin(app: &mut App) {
 #[derive(Reflect, Component, Debug, Clone, Copy, PartialEq)]
 #[reflect(Component, Debug, Default, Clone, PartialEq)]
 #[require(Transform)]
-#[component(immutable)]
+#[component(immutable, on_insert = on_portal_insert)]
 pub struct Portal {
     pub size: Vec2,
     pub vision_length: f32,
@@ -24,7 +24,10 @@ impl Default for Portal {
 
 fn on_portal_insert(mut world: DeferredWorld, HookContext { entity, .. }: HookContext) {
     let size = world.get::<Portal>(entity).unwrap().size;
-    world.commands().entity(entity).insert(Collider::cuboid(size.x, size.y, 0.));
+    world.commands().entity(entity).insert((
+        Collider::cuboid(size.x, size.y, 0.),
+        Aabb::from_min_max((size / -2.).extend(0.), (size / 2.).extend(0.)),
+    ));
 }
 
 #[derive(Reflect, Component, Debug, Clone, Copy, PartialEq, Deref)]
@@ -38,7 +41,7 @@ impl PortalTo {
     }
 }
 
-pub fn on_portal_to_discard(discard: On<Replace>, this: Query<&PortalTo>, mut commands: Commands) -> Result {
+fn on_portal_to_discard(discard: On<Replace>, this: Query<&PortalTo>, mut commands: Commands) -> Result {
     commands.entity(this.get(discard.entity)?.get()).try_despawn();
     Ok(())
 }
