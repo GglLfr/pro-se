@@ -1,29 +1,35 @@
-use bevy::ecs::{
-    change_detection::{MaybeLocation, Tick},
-    system::lifetimeless::Write,
+use bevy::{
+    ecs::{
+        change_detection::{MaybeLocation, Tick},
+        system::lifetimeless::Write,
+    },
+    render::extract_component::{ExtractComponent, ExtractComponentPlugin},
 };
 
-use crate::{camera::GameCamera, prelude::*};
+use crate::{
+    camera::{GameCamera, PrimaryCamera},
+    prelude::*,
+};
 
 pub(super) fn plugin(app: &mut App) {
-    app.init_resource::<CameraPool>()
+    app.add_plugins(ExtractComponentPlugin::<PooledCamera>::default())
+        .init_resource::<CameraPool>()
         .configure_sets(
             PostUpdate,
-            (
-                PooledCameraSystems::Obtain
-                    .after(CameraUpdateSystems)
-                    .after(VisibilitySystems::UpdateFrusta),
-                PooledCameraSystems::Update.before(VisibilitySystems::CheckVisibility),
-            )
+            // Extend `CameraUpdateSystems` so it does 1) update the primary camera first, 2) pool additional cameras, and 3) what it does normally.
+            (PooledCameraSystems::PrimaryUpdate, PooledCameraSystems::Obtain)
+                .in_set(CameraUpdateSystems)
+                .before(camera_system)
+                .before(VisibilitySystems::UpdateFrusta)
                 .chain(),
         )
         .add_systems(PreUpdate, free_pooled_cameras)
-        .add_systems(PostUpdate, pooled_camera_system.in_set(PooledCameraSystems::Update));
+        .add_systems(PostUpdate, update_primary_camera.in_set(PooledCameraSystems::PrimaryUpdate));
 }
 
 pub const CAMERA_LAYER_RESERVE: usize = 16;
 
-#[derive(Reflect, Component, Debug, Default, Clone, Copy)]
+#[derive(Reflect, Component, ExtractComponent, Debug, Default, Clone, Copy)]
 #[reflect(Component, Debug, Default, Clone)]
 #[require(GameCamera)]
 pub struct PooledCamera;
@@ -31,13 +37,16 @@ pub struct PooledCamera;
 #[derive(Reflect, SystemSet, Debug, Clone, Eq, PartialEq, Hash)]
 #[reflect(Debug, Clone, PartialEq, Hash)]
 pub enum PooledCameraSystems {
+    PrimaryUpdate,
     Obtain,
-    Update,
 }
 
-/// Calls `camera_system` for newly pooled cameras, since oftentimes pooled cameras are obtained
-/// after the primary camera is updated.
-pub fn pooled_camera_system(
+/// `camera_system` and `update_frusta` combined specifically for the primary camera only.
+/// This is to ensure systems that need pooling cameras can frustum cull properly.
+///
+/// Yes, this means the primary camera is updated twice per frame, but oh well.
+//TODO 0.19 allows system removal
+pub fn update_primary_camera(
     window_resized_reader: MessageReader<WindowResized>,
     window_created_reader: MessageReader<WindowCreated>,
     window_scale_factor_changed_reader: MessageReader<WindowScaleFactorChanged>,
@@ -46,14 +55,8 @@ pub fn pooled_camera_system(
     windows: Query<(Entity, &Window)>,
     images: Res<Assets<Image>>,
     manual_texture_views: Res<ManualTextureViews>,
-    mut cameras: Query<(Entity, Ref<GlobalTransform>, &mut Frustum, &mut Camera, &RenderTarget, &mut Projection), With<PooledCamera>>,
+    mut cameras: Query<(Entity, Ref<GlobalTransform>, &mut Frustum, &mut Camera, &RenderTarget, &mut Projection), With<PrimaryCamera>>,
 ) -> Result {
-    for (_, trns, mut frustum, _, _, projection) in &mut cameras {
-        if trns.is_changed() || projection.is_changed() {
-            *frustum = projection.compute_frustum(&*trns);
-        }
-    }
-
     camera_system(
         window_resized_reader,
         window_created_reader,
@@ -64,7 +67,15 @@ pub fn pooled_camera_system(
         images,
         manual_texture_views,
         cameras.transmute_lens::<(&mut Camera, &RenderTarget, &mut Projection)>().query(),
-    )
+    )?;
+
+    for (_, trns, mut frustum, _, _, projection) in &mut cameras {
+        if trns.is_changed() || projection.is_changed() {
+            *frustum = projection.compute_frustum(&*trns);
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Reflect, Resource, Debug)]
@@ -87,8 +98,7 @@ pub fn free_pooled_cameras(pool: ResMut<CameraPool>, mut cameras: Query<&mut Cam
     let pool = pool.into_inner();
     let mut iter = cameras.iter_many_mut(&pool.allocated);
     while let Some(mut camera) = iter.fetch_next() {
-        //TODO more stuff needs to be fixed
-        //camera.is_active = false;
+        camera.is_active = false;
     }
 
     pool.free.append(&mut pool.allocated);

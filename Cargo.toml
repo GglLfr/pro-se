@@ -28,7 +28,6 @@ features = [
     "default_app",
     "default_platform",
     "3d_bevy_render",
-    "ui",
     "scene",
     "picking",
     "ui",

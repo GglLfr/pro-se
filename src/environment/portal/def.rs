@@ -23,6 +23,7 @@ impl Default for Portal {
 }
 
 fn on_portal_insert(mut world: DeferredWorld, HookContext { entity, .. }: HookContext) {
+    // Note: Normal points towards local Z axis.
     let size = world.get::<Portal>(entity).unwrap().size;
     world.commands().entity(entity).insert((
         Collider::cuboid(size.x, size.y, 0.),

@@ -60,14 +60,14 @@ fn game_init(
 ) {
     next.set(GameState::InGame);
     let blocks = [
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 2, 0, 1, 1, 1, 1, 1, 1, 1, 1],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1],
         [1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0, 1],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-        [2, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 1, 1, 0, 0, 3],
+        [1, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 1, 1, 0, 0, 3],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1],
         [1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
         [1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1],
@@ -95,10 +95,11 @@ fn game_init(
                     commands.spawn((trns, Mesh3d(cube.clone()), MeshMaterial3d(material.clone())));
                 }
                 2 => {
-                    left_portal = trns.looking_to(Dir3::X, Dir3::Z);
+                    left_portal = trns.looking_to(Dir3::Y, Dir3::Z).with_scale(Vec3::ONE * 2.);
+                    left_portal.translation.x += 0.5;
                 }
                 3 => {
-                    right_portal = trns.looking_to(Dir3::X, Dir3::Z);
+                    right_portal = trns.looking_to(Dir3::NEG_X, Dir3::Z);
                 }
                 4 => {
                     commands.spawn((trns, PortalVisionViewer));

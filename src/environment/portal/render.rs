@@ -5,12 +5,7 @@ use crate::{
 };
 
 pub(super) fn plugin(app: &mut App) {
-    app.add_systems(
-        PostUpdate,
-        build_portal_visions
-            .in_set(PooledCameraSystems::Obtain)
-            .before(bevy::mesh::mark_3d_meshes_as_changed_if_their_assets_changed),
-    );
+    app.add_systems(PostUpdate, build_portal_visions.in_set(PooledCameraSystems::Obtain));
 }
 
 #[derive(Reflect, Component, Debug, Default, Clone, Copy)]
@@ -40,11 +35,24 @@ pub fn build_portal_visions(
         }
 
         let Ok(&other_portal_trns) = transforms.get(link.get()) else { continue };
-        let portal_camera_trns = other_portal_trns * camera_trns.reparented_to(portal_trns);
-        let portal_camera_local_trns = Transform::from(portal_camera_trns);
+        let other_camera_trns = other_portal_trns * camera_trns.reparented_to(portal_trns);
+        let other_camera_local_trns = Transform::from(other_camera_trns);
 
-        pool.obtain(&mut commands, &mut pool_query, |commands, data| {
-            commands.entity(data.entity).insert((portal_camera_trns, portal_camera_local_trns));
+        let distance = InfinitePlane3d::new(Dir3::Z).signed_distance(other_portal_trns.to_isometry(), other_camera_local_trns.translation);
+        let orientation = distance.signum() * -1.;
+
+        let view_from_world = other_camera_trns.affine().matrix3.inverse();
+        let mirror_projection_plane_normal = (view_from_world * (other_portal_trns.back().as_vec3() * orientation)).normalize();
+        let mirror_camera_projection = PerspectiveProjection {
+            near_clip_plane: mirror_projection_plane_normal
+                //TODO this is definitely not right, and sometimes breaks. don't avoid complex math now...
+                .extend(view_from_world.mul_vec3(vec3(distance, 0., 0.)).length().copysign(distance) * orientation),
+            ..default()
+        };
+
+        pool.obtain(&mut commands, &mut pool_query, |commands, mut data| {
+            *data.projection = mirror_camera_projection.into();
+            commands.entity(data.entity).insert((other_camera_trns, other_camera_local_trns));
         })?;
     }
 
