@@ -1,0 +1,13 @@
+use crate::prelude::*;
+
+#[derive(Reflect, Component, Debug, Default, Clone, Copy)]
+#[reflect(Component, Debug, Default, Clone)]
+#[require(IsDefaultUiCamera, GameCamera)]
+pub struct PrimaryCamera;
+
+#[derive(Reflect, Component, Debug, Default, Clone, Copy)]
+#[reflect(Component, Debug, Default, Clone)]
+#[require(Camera3d, Hdr)]
+pub struct GameCamera;
+
+pub const CAMERA_LAYER_RESERVE: usize = 16;

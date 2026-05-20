@@ -6,6 +6,7 @@ pub(super) fn plugin(app: &mut App) {
 
 #[derive(Reflect, Component, Debug, Clone, Copy, PartialEq)]
 #[reflect(Component, Debug, Default, Clone, PartialEq)]
+#[require(Transform)]
 #[component(immutable)]
 pub struct Portal {
     pub size: Vec2,
@@ -19,6 +20,11 @@ impl Default for Portal {
             vision_length: 1.,
         }
     }
+}
+
+fn on_portal_insert(mut world: DeferredWorld, HookContext { entity, .. }: HookContext) {
+    let size = world.get::<Portal>(entity).unwrap().size;
+    world.commands().entity(entity).insert(Collider::cuboid(size.x, size.y, 0.));
 }
 
 #[derive(Reflect, Component, Debug, Clone, Copy, PartialEq, Deref)]
