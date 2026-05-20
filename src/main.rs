@@ -49,7 +49,17 @@ fn main() -> AppExit {
         ))
         .init_state::<GameState>()
         .add_systems(Startup, game_init)
+        .add_systems(Update, move_around)
         .run()
+}
+
+#[derive(Component)]
+struct Move(Vec3, Dir3);
+
+fn move_around(time: Res<Time>, mut transforms: Query<(&mut Transform, &Move)>) {
+    for (mut trns, mov) in &mut transforms {
+        trns.translation = mov.0 + ((time.elapsed_secs() * std::f32::consts::PI / 4.).sin() / 2. + 0.5) * mov.1 * 13.;
+    }
 }
 
 fn game_init(
@@ -60,14 +70,14 @@ fn game_init(
 ) {
     next.set(GameState::InGame);
     let blocks = [
-        [1, 1, 1, 1, 1, 1, 2, 0, 1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 1],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1],
         [1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0, 1],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-        [1, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 1, 1, 0, 0, 3],
+        [1, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 1, 1, 0, 0, 1],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1],
         [1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
         [1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1],
@@ -95,11 +105,14 @@ fn game_init(
                     commands.spawn((trns, Mesh3d(cube.clone()), MeshMaterial3d(material.clone())));
                 }
                 2 => {
-                    left_portal = trns.looking_to(Dir3::Y, Dir3::Z).with_scale(Vec3::ONE * 2.);
-                    left_portal.translation.x += 0.5;
+                    left_portal = trns.looking_to(Dir3::NEG_Y, Dir3::Z);
+                    left_portal.translation.y += 0.5;
+                    //left_portal = trns.looking_to(Dir3::Y, Dir3::Z).with_scale(Vec3::ONE * 2.);
+                    //left_portal.translation.x += 0.5;
                 }
                 3 => {
-                    right_portal = trns.looking_to(Dir3::NEG_X, Dir3::Z);
+                    right_portal = trns.looking_to(Dir3::X, Dir3::Z);
+                    right_portal.translation.x += 0.5;
                 }
                 4 => {
                     commands.spawn((trns, PortalVisionViewer));
@@ -109,6 +122,13 @@ fn game_init(
         }
     }
 
-    let left_portal = commands.spawn((left_portal, Portal::default())).id();
-    commands.spawn((right_portal, Portal::default(), PortalTo(left_portal)));
+    let left_portal = commands
+        .spawn((left_portal, Portal::default(), Move(left_portal.translation, Dir3::X)))
+        .id();
+    commands.spawn((
+        right_portal,
+        Portal::default(),
+        Move(right_portal.translation, Dir3::NEG_Y),
+        PortalTo(left_portal),
+    ));
 }
