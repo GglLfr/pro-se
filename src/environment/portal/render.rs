@@ -24,13 +24,18 @@ pub fn build_portal_visions(
 ) -> Result {
     let (camera_trns, frustum) = camera.into_inner();
     for (portal_trns, portal_aabb, portal, link) in &portals {
-        let world_from_local = portal_trns.affine();
+        let portal_affine = portal_trns.affine();
+        let (scl, ..) = portal_affine.to_scale_rotation_translation();
+        if scl.x.abs() < 0.00001 || scl.y.abs() < 0.00001 || scl.z.abs() < 0.00001 {
+            continue
+        }
+
         let model_sphere = bevy::camera::primitives::Sphere {
-            center: world_from_local.transform_point3a(portal_aabb.center),
+            center: portal_affine.transform_point3a(portal_aabb.center),
             radius: portal_trns.radius_vec3a(portal_aabb.half_extents),
         };
 
-        if !frustum.intersects_sphere(&model_sphere, false) || !frustum.intersects_obb(portal_aabb, &world_from_local, true, false) {
+        if !frustum.intersects_sphere(&model_sphere, false) || !frustum.intersects_obb(portal_aabb, &portal_affine, true, false) {
             continue
         }
 

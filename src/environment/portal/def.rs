@@ -6,29 +6,19 @@ pub(super) fn plugin(app: &mut App) {
 
 #[derive(Reflect, Component, Debug, Clone, Copy, PartialEq)]
 #[reflect(Component, Debug, Default, Clone, PartialEq)]
-#[require(Transform)]
-#[component(immutable, on_insert = on_portal_insert)]
+#[require(
+    Transform,
+    Aabb::from_min_max(vec3(-0.5, -0.5, 0.), vec3(0.5, 0.5, 0.)),
+    Collider::cuboid(1., 1., 0.)
+)]
 pub struct Portal {
-    pub size: Vec2,
     pub vision_length: f32,
 }
 
 impl Default for Portal {
     fn default() -> Self {
-        Self {
-            size: Vec2::ONE,
-            vision_length: 1.,
-        }
+        Self { vision_length: 8. }
     }
-}
-
-fn on_portal_insert(mut world: DeferredWorld, HookContext { entity, .. }: HookContext) {
-    // Note: Normal points towards local Z axis.
-    let size = world.get::<Portal>(entity).unwrap().size;
-    world.commands().entity(entity).insert((
-        Collider::cuboid(size.x, size.y, 0.),
-        Aabb::from_min_max((size / -2.).extend(0.), (size / 2.).extend(0.)),
-    ));
 }
 
 #[derive(Reflect, Component, Debug, Clone, Copy, PartialEq, Deref)]
@@ -42,7 +32,7 @@ impl PortalTo {
     }
 }
 
-fn on_portal_to_discard(discard: On<Replace>, this: Query<&PortalTo>, mut commands: Commands) -> Result {
+fn on_portal_to_discard(discard: On<Replace, PortalTo>, this: Query<&PortalTo>, mut commands: Commands) -> Result {
     commands.entity(this.get(discard.entity)?.get()).try_despawn();
     Ok(())
 }
