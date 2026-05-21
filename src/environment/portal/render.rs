@@ -5,7 +5,19 @@ use crate::{
 };
 
 pub(super) fn plugin(app: &mut App) {
-    app.add_systems(PostUpdate, build_portal_visions.in_set(PooledCameraSystems::Obtain));
+    app.add_systems(
+        PostUpdate,
+        (
+            force_compute_portal_transform.in_set(PooledCameraSystems::Prepare),
+            build_portal_visions.in_set(PooledCameraSystems::Obtain),
+        ),
+    );
+}
+
+pub fn force_compute_portal_transform(mut portals: Query<(&Transform, &mut GlobalTransform), (Without<ChildOf>, Changed<Transform>)>) {
+    portals.par_iter_mut().for_each(|(&trns, mut global_trns)| {
+        global_trns.set_if_neq(trns.into());
+    });
 }
 
 #[derive(Reflect, Component, Debug, Default, Clone, Copy)]

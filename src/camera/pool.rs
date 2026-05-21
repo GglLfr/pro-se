@@ -17,14 +17,14 @@ pub(super) fn plugin(app: &mut App) {
         .configure_sets(
             PostUpdate,
             // Extend `CameraUpdateSystems` so it does 1) update the primary camera first, 2) pool additional cameras, and 3) what it does normally.
-            (PooledCameraSystems::PrimaryUpdate, PooledCameraSystems::Obtain)
+            (PooledCameraSystems::Prepare, PooledCameraSystems::Obtain)
+                .chain()
                 .in_set(CameraUpdateSystems)
                 .before(camera_system)
-                .before(VisibilitySystems::UpdateFrusta)
-                .chain(),
+                .before(VisibilitySystems::UpdateFrusta),
         )
-        .add_systems(PreUpdate, free_pooled_cameras)
-        .add_systems(PostUpdate, update_primary_camera.in_set(PooledCameraSystems::PrimaryUpdate));
+        .add_systems(PreUpdate, free_pooled_cameras.in_set(PooledCameraSystems::Free))
+        .add_systems(PostUpdate, update_primary_camera.in_set(PooledCameraSystems::Prepare));
 }
 
 pub const CAMERA_LAYER_RESERVE: usize = 16;
@@ -37,8 +37,9 @@ pub struct PooledCamera;
 #[derive(Reflect, SystemSet, Debug, Clone, Eq, PartialEq, Hash)]
 #[reflect(Debug, Clone, PartialEq, Hash)]
 pub enum PooledCameraSystems {
-    PrimaryUpdate,
+    Prepare,
     Obtain,
+    Free,
 }
 
 /// `camera_system` and `update_frusta` combined specifically for the primary camera only.
@@ -55,8 +56,26 @@ pub fn update_primary_camera(
     windows: Query<(Entity, &Window)>,
     images: Res<Assets<Image>>,
     manual_texture_views: Res<ManualTextureViews>,
-    mut cameras: Query<(Entity, Ref<GlobalTransform>, &mut Frustum, &mut Camera, &RenderTarget, &mut Projection), With<PrimaryCamera>>,
+    mut cameras: Query<
+        (
+            Entity,
+            Ref<Transform>,
+            Mut<GlobalTransform>,
+            &mut Frustum,
+            &mut Camera,
+            &RenderTarget,
+            &mut Projection,
+        ),
+        With<PrimaryCamera>,
+    >,
 ) -> Result {
+    // Assume `PrimaryCamera` has no parent entity.
+    for (_, trns, mut global_trns, _, _, _, _) in &mut cameras {
+        if trns.is_changed() {
+            global_trns.set_if_neq(GlobalTransform::from(*trns));
+        }
+    }
+
     camera_system(
         window_resized_reader,
         window_created_reader,
@@ -69,7 +88,7 @@ pub fn update_primary_camera(
         cameras.transmute_lens::<(&mut Camera, &RenderTarget, &mut Projection)>().query(),
     )?;
 
-    for (_, trns, mut frustum, _, _, projection) in &mut cameras {
+    for (_, _, trns, mut frustum, _, _, projection) in &mut cameras {
         if trns.is_changed() || projection.is_changed() {
             *frustum = projection.compute_frustum(&*trns);
         }
