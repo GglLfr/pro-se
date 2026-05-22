@@ -139,7 +139,6 @@ impl CameraProjection for ClipProjection {
 pub struct Clip {}
 impl MaterialExtension for Clip {
     fn vertex_shader() -> ShaderRef {
-        //TODO custom vertex shader with clip distance
         ShaderRef::Path("shaders/clip.wgsl".into())
     }
 
