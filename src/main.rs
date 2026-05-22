@@ -92,15 +92,15 @@ fn move_around(time: Res<Time>, mut transforms: Query<(&mut Transform, &Shift)>)
     for (trns, mov) in &mut transforms {
         let trns = trns.into_inner();
         trns.translation.y = match (mov.1, mov.2) {
-            (false, false) => mov.0 - (t * 15. - 1.).max(0.) / 2.,
-            (false, true) => mov.0 - ((t * 15. + 1.).min(15.) - 1.) / 2. + 7.,
-            (true, false) => mov.0 + (t * 15. - 1.).max(0.) / 2.,
-            (true, true) => mov.0 + ((t * 15. + 1.).min(15.) - 1.) / 2. - 7.,
+            (false, false) => mov.0 - (t * 16. - 1.).max(0.) / 2.,
+            (false, true) => mov.0 - ((t * 16. + 1.).min(16.) - 1.) / 2. + 7.5,
+            (true, false) => mov.0 + (t * 16. - 1.).max(0.) / 2.,
+            (true, true) => mov.0 + ((t * 16. + 1.).min(16.) - 1.) / 2. - 7.5,
         };
 
         trns.scale.x = match (mov.1, mov.2) {
-            (false, false) | (true, false) => (t * 15. - 1.).max(0.),
-            (false, true) | (true, true) => ((1. - t) * 15. - 1.).max(0.),
+            (false, false) | (true, false) => (t * 16. - 1.).max(0.),
+            (false, true) | (true, true) => ((1. - t) * 16. - 1.).max(0.),
         };
     }
 }
@@ -156,8 +156,8 @@ fn game_init(
     }
 
     portals[0].translation += vec3(-0.5, 0.5, 0.);
-    portals[1].translation += vec3(-0.5, -0.5, 0.);
-    portals[2].translation += vec3(0.5, -0.5, 0.);
+    portals[1].translation += vec3(-0.5, -1.5, 0.);
+    portals[2].translation += vec3(0.5, -1.5, 0.);
     portals[3].translation += vec3(0.5, 0.5, 0.);
 
     let a = commands
