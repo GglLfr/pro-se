@@ -1,14 +1,24 @@
 pub mod prelude {
+    pub use std::f32::consts::PI;
+
     pub use avian3d::prelude::*;
     pub use bevy::{
         camera::{
-            CameraUpdateSystems, RenderTarget,
-            primitives::{Aabb, Frustum},
+            CameraProjection, CameraUpdateSystems, RenderTarget, SubCameraView,
+            primitives::{Aabb, Frustum, HalfSpace},
             visibility::{RenderLayers, VisibilitySystems},
         },
         ecs::{lifecycle::HookContext, query::QueryData, world::DeferredWorld},
+        pbr::{ExtendedMaterial, MaterialExtension},
         prelude::*,
-        render::{camera::camera_system, view::Hdr},
+        render::{
+            RenderPlugin,
+            camera::camera_system,
+            render_resource::AsBindGroup,
+            settings::{RenderCreation, WgpuFeatures, WgpuSettings},
+            view::Hdr,
+        },
+        shader::ShaderRef,
         window::{PrimaryWindow, WindowCreated, WindowResized, WindowScaleFactorChanged},
     };
     pub use mimalloc_redirect::MiMalloc;
@@ -41,7 +51,13 @@ fn report_mimalloc_version(_: &mut App) {
 fn main() -> AppExit {
     App::new()
         .add_plugins((
-            DefaultPlugins,
+            DefaultPlugins.set(RenderPlugin {
+                render_creation: RenderCreation::Automatic(WgpuSettings {
+                    features: WgpuFeatures::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES | WgpuFeatures::CLIP_DISTANCES,
+                    ..default()
+                }),
+                ..default()
+            }),
             report_mimalloc_version,
             PhysicsPlugins::default(),
             PhysicsDebugPlugin,
@@ -83,7 +99,7 @@ fn game_init(
     next.set(GameState::InGame);
     let blocks = [
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5],
+        [0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0],
@@ -96,7 +112,7 @@ fn game_init(
         [0, 0, 1, 1, 1, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4],
+        [0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0],
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
     ];
 
@@ -124,10 +140,10 @@ fn game_init(
         }
     }
 
-    portals[0].translation.y += 0.5;
-    portals[1].translation.y -= 0.5;
-    portals[2].translation.y -= 0.5;
-    portals[3].translation.y += 0.5;
+    portals[0].translation += vec3(-0.5, 0.5, 0.);
+    portals[1].translation += vec3(-0.5, -0.5, 0.);
+    portals[2].translation += vec3(0.5, -0.5, 0.);
+    portals[3].translation += vec3(0.5, 0.5, 0.);
 
     let a = commands
         .spawn((portals[0], Portal::default(), Shift(portals[0].translation.y, false, false)))

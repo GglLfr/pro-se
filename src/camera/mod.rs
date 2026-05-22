@@ -1,12 +1,14 @@
 use crate::prelude::*;
 
+mod clip;
 mod def;
 mod pool;
+pub use clip::*;
 pub use def::*;
 pub use pool::*;
 
 pub(super) fn plugin(app: &mut App) {
-    app.add_plugins(pool::plugin)
+    app.add_plugins((clip::plugin, pool::plugin))
         .insert_resource(ClearColor(Color::NONE))
         .insert_resource(GlobalAmbientLight {
             color: Color::WHITE,

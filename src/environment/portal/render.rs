@@ -1,5 +1,5 @@
 use crate::{
-    camera::{CameraPool, CameraPoolQuery, PooledCameraSystems, PrimaryCamera},
+    camera::{CameraPool, CameraPoolQuery, ClipPlane, ClipProjection, PooledCameraSystems, PrimaryCamera},
     environment::portal::{Portal, PortalLink},
     prelude::*,
 };
@@ -55,20 +55,18 @@ pub fn build_portal_visions(
         let other_camera_trns = other_portal_trns * camera_trns.reparented_to(portal_trns);
         let other_camera_local_trns = Transform::from(other_camera_trns);
 
-        let distance = InfinitePlane3d::new(Dir3::Z).signed_distance(other_portal_trns.to_isometry(), other_camera_local_trns.translation);
-        let orientation = distance.signum() * -1.;
-
-        let view_from_world = other_camera_trns.affine().matrix3.inverse();
-        let mirror_projection_plane_normal = (view_from_world * (other_portal_trns.back().as_vec3() * orientation)).normalize();
-        let mirror_camera_projection = PerspectiveProjection {
-            near_clip_plane: mirror_projection_plane_normal
-                //TODO this is definitely not right, and sometimes breaks. don't avoid complex math now...
-                .extend(view_from_world.mul_vec3(vec3(distance, 0., 0.)).length().copysign(distance) * orientation),
-            ..default()
-        };
+        let portal_normal = other_portal_trns.forward();
+        let orientation = portal_normal
+            .dot(other_portal_trns.translation() - other_camera_local_trns.translation)
+            .signum();
+        let portal_normal = portal_normal * orientation;
+        let d = -portal_normal.dot(other_portal_trns.translation());
 
         pool.obtain(&mut commands, &mut pool_query, |commands, mut data| {
-            *data.projection = mirror_camera_projection.into();
+            *data.projection = Projection::custom(ClipProjection {
+                clip: ClipPlane::World(HalfSpace::new(portal_normal.extend(d))),
+                ..default()
+            });
             commands.entity(data.entity).insert((other_camera_trns, other_camera_local_trns));
         })?;
     }

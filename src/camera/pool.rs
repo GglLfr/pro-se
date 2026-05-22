@@ -1,9 +1,6 @@
-use bevy::{
-    ecs::{
-        change_detection::{MaybeLocation, Tick},
-        system::lifetimeless::Write,
-    },
-    render::extract_component::{ExtractComponent, ExtractComponentPlugin},
+use bevy::ecs::{
+    change_detection::{MaybeLocation, Tick},
+    system::lifetimeless::Write,
 };
 
 use crate::{
@@ -12,8 +9,7 @@ use crate::{
 };
 
 pub(super) fn plugin(app: &mut App) {
-    app.add_plugins(ExtractComponentPlugin::<PooledCamera>::default())
-        .init_resource::<CameraPool>()
+    app.init_resource::<CameraPool>()
         .configure_sets(
             PostUpdate,
             // Extend `CameraUpdateSystems` so it does 1) update the primary camera first, 2) pool additional cameras, and 3) what it does normally.
@@ -29,7 +25,7 @@ pub(super) fn plugin(app: &mut App) {
 
 pub const CAMERA_LAYER_RESERVE: usize = 16;
 
-#[derive(Reflect, Component, ExtractComponent, Debug, Default, Clone, Copy)]
+#[derive(Reflect, Component, Debug, Default, Clone, Copy)]
 #[reflect(Component, Debug, Default, Clone)]
 #[require(GameCamera)]
 pub struct PooledCamera;
@@ -42,8 +38,9 @@ pub enum PooledCameraSystems {
     Free,
 }
 
-/// `camera_system` and `update_frusta` combined specifically for the primary camera only.
-/// This is to ensure systems that need pooling cameras can frustum cull properly.
+/// `camera_system` and `update_frusta` combined specifically for the primary camera only, along
+/// with global transform computation. This is to ensure systems that need to pool cameras can do
+/// frustum culling properly.
 ///
 /// Yes, this means the primary camera is updated twice per frame, but oh well.
 //TODO 0.19 allows system removal
@@ -155,6 +152,7 @@ impl CameraPool {
             let entity = commands.spawn_empty().id();
             self.allocated.push(entity);
 
+            //TODO this is really hideous
             let result = apply(commands, CameraPoolQueryItem {
                 entity,
                 camera: Mut::new(
