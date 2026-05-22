@@ -28,7 +28,7 @@ pub struct PortalVisionViewer;
 pub fn build_portal_visions(
     mut commands: Commands,
     mut pool: ResMut<CameraPool>,
-    mut pool_query: Query<CameraPoolQuery>,
+    mut pool_query: CameraPoolQuery,
     viewer: Single<&GlobalTransform, With<PortalVisionViewer>>,
     camera: Single<(&GlobalTransform, &Frustum), With<PrimaryCamera>>,
     portals: Query<(&GlobalTransform, &Aabb, &Portal, PortalLink)>,

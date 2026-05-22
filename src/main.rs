@@ -10,8 +10,11 @@ pub mod prelude {
         },
         ecs::{
             lifecycle::HookContext,
-            query::{QueryData, ROQueryItem},
-            system::{ReadOnlySystemParam, SystemParamItem, lifetimeless::Read},
+            query::{QueryData, QueryItem, ROQueryItem},
+            system::{
+                ReadOnlySystemParam, SystemParamItem,
+                lifetimeless::{Read, Write},
+            },
             world::DeferredWorld,
         },
         mesh::MeshVertexBufferLayoutRef,

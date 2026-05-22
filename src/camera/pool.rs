@@ -1,8 +1,3 @@
-use bevy::ecs::{
-    change_detection::{MaybeLocation, Tick},
-    system::lifetimeless::Write,
-};
-
 use crate::{
     camera::{GameCamera, PrimaryCamera},
     prelude::*,
@@ -22,8 +17,6 @@ pub(super) fn plugin(app: &mut App) {
         .add_systems(PreUpdate, free_pooled_cameras.in_set(PooledCameraSystems::Free))
         .add_systems(PostUpdate, update_primary_camera.in_set(PooledCameraSystems::Prepare));
 }
-
-pub const CAMERA_LAYER_RESERVE: usize = 16;
 
 #[derive(Reflect, Component, Debug, Default, Clone, Copy)]
 #[reflect(Component, Debug, Default, Clone)]
@@ -120,25 +113,54 @@ pub fn free_pooled_cameras(pool: ResMut<CameraPool>, mut cameras: Query<&mut Cam
     pool.free.append(&mut pool.allocated);
 }
 
-#[derive(QueryData)]
+/*#[derive(QueryData)]
 #[query_data(mutable)]
 pub struct CameraPoolQuery {
     pub entity: Entity,
     pub camera: Write<Camera>,
     pub projection: Write<Projection>,
+    pub target: Write<RenderTarget>,
+    pub layers: Write<RenderLayers>,
+}*/
+
+macro_rules! query_impl {
+    ($($name:ident : $t:ty,)*) => {
+        pub type CameraPoolQuery<'w, 's> = Query<'w, 's, (Entity, $(Write<$t>,)*), With<PooledCamera>>;
+
+        pub struct PooledCameraParams<'w> {
+            pub entity: Entity,
+            $(pub $name: &'w mut $t,)*
+        }
+
+        impl<'w> PooledCameraParams<'w> {
+            pub fn from_item<'s>((entity, $($name,)*): QueryItem<'w, 's, (Entity, $(Write<$t>,)*)>) -> Self {
+                Self {
+                    entity,
+                    $($name: $name.into_inner(),)*
+                }
+            }
+        }
+    };
+}
+
+query_impl! {
+    camera: Camera,
+    projection: Projection,
+    target: RenderTarget,
+    layers: RenderLayers,
 }
 
 impl CameraPool {
     pub fn obtain<T>(
         &mut self,
         commands: &mut Commands,
-        query: &mut Query<CameraPoolQuery>,
-        apply: impl FnOnce(&mut Commands, CameraPoolQueryItem) -> T,
+        query: &mut CameraPoolQuery,
+        apply: impl FnOnce(&mut Commands, PooledCameraParams) -> T,
     ) -> Result<T> {
         if let Some(e) = self.free.pop() {
             self.allocated.push(e);
 
-            let mut item = query.get_mut(e)?;
+            let item = PooledCameraParams::from_item(query.get_mut(e)?);
             item.camera.is_active = true;
             Ok(apply(commands, item))
         } else {
@@ -148,38 +170,20 @@ impl CameraPool {
                 ..default()
             };
             let mut projection = Projection::default();
+            let mut target = RenderTarget::default();
+            let mut layers = RenderLayers::default();
 
             let entity = commands.spawn_empty().id();
             self.allocated.push(entity);
 
-            //TODO this is really hideous
-            let result = apply(commands, CameraPoolQueryItem {
+            let result = apply(commands, PooledCameraParams {
                 entity,
-                camera: Mut::new(
-                    &mut camera,
-                    &mut Tick::new(0),
-                    &mut Tick::new(0),
-                    Tick::new(0),
-                    Tick::new(0),
-                    MaybeLocation::caller().as_mut(),
-                ),
-                projection: Mut::new(
-                    &mut projection,
-                    &mut Tick::new(0),
-                    &mut Tick::new(0),
-                    Tick::new(0),
-                    Tick::new(0),
-                    MaybeLocation::caller().as_mut(),
-                ),
+                camera: &mut camera,
+                projection: &mut projection,
+                target: &mut target,
+                layers: &mut layers,
             });
-
-            commands.entity(entity).insert((
-                PooledCamera,
-                RenderTarget::Window(bevy::window::WindowRef::Primary),
-                RenderLayers::from_layers(&[0, CAMERA_LAYER_RESERVE + count]),
-                camera,
-                projection,
-            ));
+            commands.entity(entity).insert((PooledCamera, camera, projection, target, layers));
             Ok(result)
         }
     }
