@@ -113,16 +113,6 @@ pub fn free_pooled_cameras(pool: ResMut<CameraPool>, mut cameras: Query<&mut Cam
     pool.free.append(&mut pool.allocated);
 }
 
-/*#[derive(QueryData)]
-#[query_data(mutable)]
-pub struct CameraPoolQuery {
-    pub entity: Entity,
-    pub camera: Write<Camera>,
-    pub projection: Write<Projection>,
-    pub target: Write<RenderTarget>,
-    pub layers: Write<RenderLayers>,
-}*/
-
 macro_rules! query_impl {
     ($($name:ident : $t:ty,)*) => {
         pub type CameraPoolQuery<'w, 's> = Query<'w, 's, (Entity, $(Write<$t>,)*), With<PooledCamera>>;
