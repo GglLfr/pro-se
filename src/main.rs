@@ -1,5 +1,5 @@
 pub mod prelude {
-    pub use std::f32::consts::PI;
+    pub use std::{f32::consts::PI, ptr::addr_eq};
 
     pub use avian3d::prelude::*;
     pub use bevy::{
@@ -8,17 +8,29 @@ pub mod prelude {
             primitives::{Aabb, Frustum, HalfSpace},
             visibility::{RenderLayers, VisibilitySystems},
         },
-        ecs::{lifecycle::HookContext, query::QueryData, world::DeferredWorld},
-        pbr::{ExtendedMaterial, MaterialExtension},
+        ecs::{
+            lifecycle::HookContext,
+            query::{QueryData, ROQueryItem},
+            system::{ReadOnlySystemParam, SystemParamItem, lifetimeless::Read},
+            world::DeferredWorld,
+        },
+        mesh::MeshVertexBufferLayoutRef,
+        pbr::{ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline},
         prelude::*,
         render::{
-            RenderPlugin,
+            Extract, Render, RenderApp, RenderPlugin, RenderStartup, RenderSystems,
             camera::camera_system,
-            render_resource::AsBindGroup,
+            render_phase::{Draw, DrawFunctions, PhaseItem, RenderCommand, RenderCommandResult, RenderCommandState, TrackedRenderPass},
+            render_resource::{
+                AsBindGroup, BindGroup, BindGroupEntry, BindGroupLayoutDescriptor, BufferUsages, DynamicUniformBuffer, PipelineCache,
+                RenderPipelineDescriptor, ShaderStages, ShaderType, SpecializedMeshPipelineError, binding_types::uniform_buffer,
+            },
+            renderer::{RenderDevice, RenderQueue},
             settings::{RenderCreation, WgpuFeatures, WgpuSettings},
+            sync_world::RenderEntity,
             view::Hdr,
         },
-        shader::ShaderRef,
+        shader::{ShaderDefVal, ShaderRef},
         window::{PrimaryWindow, WindowCreated, WindowResized, WindowScaleFactorChanged},
     };
     pub use mimalloc_redirect::MiMalloc;
@@ -26,7 +38,10 @@ pub mod prelude {
 
 use prelude::*;
 
-use crate::environment::portal::{Portal, PortalTo, PortalVisionViewer};
+use crate::{
+    camera::ClipMaterial,
+    environment::portal::{Portal, PortalTo, PortalVisionViewer},
+};
 
 pub mod camera;
 pub mod environment;
@@ -94,12 +109,12 @@ fn game_init(
     mut commands: Commands,
     mut next: ResMut<NextState<GameState>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<ClipMaterial>>,
 ) {
     next.set(GameState::InGame);
     let blocks = [
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0],
+        [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0],
@@ -112,14 +127,14 @@ fn game_init(
         [0, 0, 1, 1, 1, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0],
+        [3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4],
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
     ];
 
     let mut portals = [Transform::IDENTITY; 4];
 
     let cube = meshes.add(Cuboid::from_size(Vec3::ONE).mesh());
-    let material = materials.add(StandardMaterial::default());
+    let material = materials.add(ClipMaterial::default());
 
     let start_y = (blocks.len() - 1) as f32 / 2.;
     for (dy, row) in blocks.into_iter().enumerate() {
