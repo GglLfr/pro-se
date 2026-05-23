@@ -9,6 +9,7 @@ pub type ClipMaterial = ExtendedMaterial<StandardMaterial, Clip>;
 
 pub(super) fn plugin(app: &mut App) {
     app.add_plugins(MaterialPlugin::<ClipMaterial>::default())
+        .register_asset_reflect::<ClipMaterial>()
         .add_systems(Startup, add_default_clip_material);
 
     if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
@@ -135,6 +136,7 @@ impl CameraProjection for ClipProjection {
 }
 
 #[derive(Reflect, Asset, AsBindGroup, Debug, Default, Clone, Copy)]
+#[reflect(Debug, Default, Clone)]
 #[bindless(index_table(range(50..51), binding(100)))]
 pub struct Clip {}
 impl MaterialExtension for Clip {

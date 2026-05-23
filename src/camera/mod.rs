@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{gfx::LAYER_PORTAL_RESERVE, prelude::*};
 
 mod clip;
 mod def;
@@ -21,7 +21,7 @@ pub(super) fn plugin(app: &mut App) {
 pub fn spawn_camera(mut commands: Commands) {
     commands.spawn((
         PrimaryCamera,
-        RenderLayers::from_layers(&[0, 1]),
+        RenderLayers::from_layers(&[0, LAYER_PORTAL_RESERVE]),
         PointLight {
             range: 40.,
             intensity: 4_000_000.0,

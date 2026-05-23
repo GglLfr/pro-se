@@ -4,18 +4,29 @@ use crate::{
 };
 
 pub(super) fn plugin(app: &mut App) {
-    app.init_resource::<CameraPool>()
-        .configure_sets(
-            PostUpdate,
-            // Extend `CameraUpdateSystems` so it does 1) update the primary camera first, 2) pool additional cameras, and 3) what it does normally.
-            (PooledCameraSystems::Prepare, PooledCameraSystems::Obtain)
-                .chain()
-                .in_set(CameraUpdateSystems)
-                .before(camera_system)
-                .before(VisibilitySystems::UpdateFrusta),
+    app.configure_sets(
+        PostUpdate,
+        // Extend `CameraUpdateSystems` so it does 1) update the primary camera first, 2) pool additional cameras, and 3) what it does normally.
+        (
+            PooledCameraSystems::Prepare,
+            PooledCameraSystems::Obtain,
+            PooledCameraSystems::UpdateImages,
         )
-        .add_systems(PreUpdate, free_pooled_cameras.in_set(PooledCameraSystems::Free))
-        .add_systems(PostUpdate, update_primary_camera.in_set(PooledCameraSystems::Prepare));
+            .chain()
+            .in_set(CameraUpdateSystems)
+            .before(camera_system)
+            .before(VisibilitySystems::UpdateFrusta)
+            .before(VisibilitySystems::VisibilityPropagate),
+    )
+    .add_systems(Startup, init_camera_pool)
+    .add_systems(PreUpdate, free_pooled_cameras.in_set(PooledCameraSystems::Free))
+    .add_systems(
+        PostUpdate,
+        (
+            update_primary_camera.in_set(PooledCameraSystems::Prepare),
+            update_pooled_dirty_images.in_set(PooledCameraSystems::UpdateImages),
+        ),
+    );
 }
 
 #[derive(Reflect, Component, Debug, Default, Clone, Copy)]
@@ -26,9 +37,10 @@ pub struct PooledCamera;
 #[derive(Reflect, SystemSet, Debug, Clone, Eq, PartialEq, Hash)]
 #[reflect(Debug, Clone, PartialEq, Hash)]
 pub enum PooledCameraSystems {
+    Free,
     Prepare,
     Obtain,
-    Free,
+    UpdateImages,
 }
 
 /// `camera_system` and `update_frusta` combined specifically for the primary camera only, along
@@ -87,20 +99,23 @@ pub fn update_primary_camera(
     Ok(())
 }
 
-#[derive(Reflect, Resource, Debug)]
-#[reflect(Resource, Debug, Default)]
+#[derive(Resource)]
 pub struct CameraPool {
+    image_provider: AssetHandleProvider,
+    images: Vec<Handle<Image>>,
+    dirty_image: usize,
     allocated: Vec<Entity>,
     free: Vec<Entity>,
 }
 
-impl Default for CameraPool {
-    fn default() -> Self {
-        Self {
-            allocated: vec![],
-            free: vec![],
-        }
-    }
+pub fn init_camera_pool(mut commands: Commands, images: Res<Assets<Image>>) {
+    commands.insert_resource(CameraPool {
+        image_provider: images.get_handle_provider(),
+        images: vec![],
+        dirty_image: 0,
+        allocated: vec![],
+        free: vec![],
+    });
 }
 
 pub fn free_pooled_cameras(pool: ResMut<CameraPool>, mut cameras: Query<&mut Camera>) {
@@ -113,21 +128,58 @@ pub fn free_pooled_cameras(pool: ResMut<CameraPool>, mut cameras: Query<&mut Cam
     pool.free.append(&mut pool.allocated);
 }
 
+pub fn update_pooled_dirty_images(
+    pool: ResMut<CameraPool>,
+    mut images: ResMut<Assets<Image>>,
+    camera: Single<(&Camera, Has<Hdr>), With<PrimaryCamera>>,
+    mut last_size: Local<UVec2>,
+) -> Result {
+    let (camera, is_hdr) = camera.into_inner();
+    let Some(size) = camera.physical_target_size() else { return Ok(()) };
+
+    let pool = pool.into_inner();
+    if std::mem::replace(&mut *last_size, size) != size {
+        pool.dirty_image = 0;
+    }
+
+    for handle in &pool.images[std::mem::replace(&mut pool.dirty_image, pool.images.len())..] {
+        images.insert(handle, Image {
+            asset_usage: RenderAssetUsages::RENDER_WORLD,
+            ..Image::new_target_texture(
+                size.x,
+                size.y,
+                match is_hdr {
+                    false => TextureFormat::bevy_default(),
+                    true => ViewTarget::TEXTURE_FORMAT_HDR,
+                },
+                None,
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
 macro_rules! query_impl {
     ($($name:ident : $t:ty,)*) => {
-        pub type CameraPoolQuery<'w, 's> = Query<'w, 's, (Entity, $(Write<$t>,)*), With<PooledCamera>>;
+        pub type CameraPoolQuery<'w, 's> = Query<'w, 's, (Entity, Read<RenderTarget>, $(Write<$t>,)*), With<PooledCamera>>;
 
         pub struct PooledCameraParams<'w> {
             pub entity: Entity,
+            pub image: &'w Handle<Image>,
             $(pub $name: &'w mut $t,)*
         }
 
         impl<'w> PooledCameraParams<'w> {
-            pub fn from_item<'s>((entity, $($name,)*): QueryItem<'w, 's, (Entity, $(Write<$t>,)*)>) -> Self {
-                Self {
+            pub fn from_item<'s>((entity, target, $($name,)*): QueryItem<'w, 's, (Entity, Read<RenderTarget>, $(Write<$t>,)*)>) -> Result<Self> {
+                Ok(Self {
                     entity,
+                    image: match target {
+                        RenderTarget::Image(target) => &target.handle,
+                        _ => Err("Pooled cameras must render to an image")?,
+                    },
                     $($name: $name.into_inner(),)*
-                }
+                })
             }
         }
     };
@@ -136,7 +188,6 @@ macro_rules! query_impl {
 query_impl! {
     camera: Camera,
     projection: Projection,
-    target: RenderTarget,
     layers: RenderLayers,
 }
 
@@ -150,30 +201,30 @@ impl CameraPool {
         if let Some(e) = self.free.pop() {
             self.allocated.push(e);
 
-            let item = PooledCameraParams::from_item(query.get_mut(e)?);
+            let item = PooledCameraParams::from_item(query.get_mut(e)?)?;
             item.camera.is_active = true;
             Ok(apply(commands, item))
         } else {
-            let count = self.allocated.len() + self.free.len();
-            let mut camera = Camera {
-                order: (-1isize).saturating_sub_unsigned(count),
-                ..default()
-            };
+            let mut camera = Camera::default();
+            let image = self.image_provider.reserve_handle().typed_debug_checked::<Image>();
             let mut projection = Projection::default();
-            let mut target = RenderTarget::default();
             let mut layers = RenderLayers::default();
 
             let entity = commands.spawn_empty().id();
-            self.allocated.push(entity);
-
             let result = apply(commands, PooledCameraParams {
                 entity,
+                image: &image,
                 camera: &mut camera,
                 projection: &mut projection,
-                target: &mut target,
                 layers: &mut layers,
             });
-            commands.entity(entity).insert((PooledCamera, camera, projection, target, layers));
+
+            self.allocated.push(entity);
+            self.images.push(image.clone());
+
+            commands
+                .entity(entity)
+                .insert((PooledCamera, RenderTarget::Image(image.into()), camera, projection, layers));
             Ok(result)
         }
     }

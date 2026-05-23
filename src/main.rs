@@ -3,10 +3,11 @@ pub mod prelude {
 
     pub use avian3d::prelude::*;
     pub use bevy::{
+        asset::{AssetHandleProvider, RenderAssetUsages},
         camera::{
             CameraProjection, CameraUpdateSystems, RenderTarget, SubCameraView,
             primitives::{Aabb, Frustum, HalfSpace},
-            visibility::{RenderLayers, VisibilitySystems},
+            visibility::{NoAutoAabb, RenderLayers, VisibilitySystems},
         },
         ecs::{
             lifecycle::HookContext,
@@ -17,8 +18,9 @@ pub mod prelude {
             },
             world::DeferredWorld,
         },
-        mesh::MeshVertexBufferLayoutRef,
+        mesh::{Indices, MeshVertexBufferLayoutRef, PrimitiveTopology},
         pbr::{ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline},
+        platform::collections::{HashMap, hash_map::Entry},
         prelude::*,
         render::{
             Extract, Render, RenderApp, RenderPlugin, RenderStartup, RenderSystems,
@@ -26,12 +28,12 @@ pub mod prelude {
             render_phase::{Draw, DrawFunctions, PhaseItem, RenderCommand, RenderCommandResult, RenderCommandState, TrackedRenderPass},
             render_resource::{
                 AsBindGroup, BindGroup, BindGroupEntry, BindGroupLayoutDescriptor, BufferUsages, DynamicUniformBuffer, PipelineCache,
-                RenderPipelineDescriptor, ShaderStages, ShaderType, SpecializedMeshPipelineError, binding_types::uniform_buffer,
+                RenderPipelineDescriptor, ShaderStages, ShaderType, SpecializedMeshPipelineError, TextureFormat, binding_types::uniform_buffer,
             },
             renderer::{RenderDevice, RenderQueue},
             settings::{RenderCreation, WgpuFeatures, WgpuSettings},
             sync_world::RenderEntity,
-            view::Hdr,
+            view::{Hdr, ViewTarget},
         },
         shader::{ShaderDefVal, ShaderRef},
         window::{PrimaryWindow, WindowCreated, WindowResized, WindowScaleFactorChanged},
@@ -48,6 +50,7 @@ use crate::{
 
 pub mod camera;
 pub mod environment;
+pub mod gfx;
 
 #[derive(Reflect, States, Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[reflect(State, Debug, Default, Clone, PartialEq, /*TODO 0.19 PartialOrd,*/ Hash)]
@@ -79,7 +82,7 @@ fn main() -> AppExit {
             report_mimalloc_version,
             PhysicsPlugins::default(),
             PhysicsDebugPlugin,
-            (camera::plugin, environment::plugin),
+            (camera::plugin, environment::plugin, gfx::plugin),
         ))
         .init_state::<GameState>()
         .add_systems(Startup, game_init)
