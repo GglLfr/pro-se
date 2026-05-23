@@ -2,6 +2,7 @@ use crate::{
     camera::{CameraPool, CameraPoolQuery, ClipPlane, ClipProjection, PooledCameraSystems, PrimaryCamera},
     environment::portal::{Portal, PortalLink},
     gfx::LAYER_PORTAL_RESERVE,
+    math::HalfSpaceExt as _,
     prelude::*,
 };
 
@@ -28,51 +29,27 @@ pub struct PortalVisionMesh {
 pub fn init_portal_vision_mesh(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
     commands.insert_resource(PortalVisionMesh {
         mesh: meshes.add({
-            // Taken straight from `Cuboid`'s mesh builder implementation, except the Z coord starts at -1.
             let min = vec3(-0.5, -0.5, -1.);
             let max = vec3(0.5, 0.5, 0.);
 
-            // Suppose Y-up right hand, and camera look from +Z to -Z
             let vertices = vec![
-                // Front
+                [min.x, min.y, min.z],
+                [max.x, min.y, min.z],
+                [max.x, max.y, min.z],
+                [min.x, max.y, min.z],
                 [min.x, min.y, max.z],
                 [max.x, min.y, max.z],
                 [max.x, max.y, max.z],
                 [min.x, max.y, max.z],
-                // Back
-                [min.x, max.y, min.z],
-                [max.x, max.y, min.z],
-                [max.x, min.y, min.z],
-                [min.x, min.y, min.z],
-                // Right
-                [max.x, min.y, min.z],
-                [max.x, max.y, min.z],
-                [max.x, max.y, max.z],
-                [max.x, min.y, max.z],
-                // Left
-                [min.x, min.y, max.z],
-                [min.x, max.y, max.z],
-                [min.x, max.y, min.z],
-                [min.x, min.y, min.z],
-                // Top
-                [max.x, max.y, min.z],
-                [min.x, max.y, min.z],
-                [min.x, max.y, max.z],
-                [max.x, max.y, max.z],
-                // Bottom
-                [max.x, min.y, max.z],
-                [min.x, min.y, max.z],
-                [min.x, min.y, min.z],
-                [max.x, min.y, min.z],
             ];
 
             let indices = Indices::U32(vec![
-                0, 1, 2, 2, 3, 0, // front
-                4, 5, 6, 6, 7, 4, // back
-                8, 9, 10, 10, 11, 8, // right
-                12, 13, 14, 14, 15, 12, // left
-                16, 17, 18, 18, 19, 16, // top
-                20, 21, 22, 22, 23, 20, // bottom
+                0, 1, 2, 2, 3, 0, // Bottom.
+                0, 1, 5, 5, 4, 0, // Front.
+                1, 2, 6, 6, 5, 1, // Right.
+                2, 3, 7, 7, 6, 2, // Back.
+                3, 0, 4, 4, 7, 3, // Left.
+                4, 5, 6, 6, 7, 4, // Top.
             ]);
 
             Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
@@ -84,10 +61,29 @@ pub fn init_portal_vision_mesh(mut commands: Commands, mut meshes: ResMut<Assets
 
 #[derive(Reflect, Asset, AsBindGroup, Debug, Default, Clone)]
 #[reflect(Debug, Default, Clone)]
-#[bindless(index_table(range(50..51), binding(100)))]
+#[data(50, PortalVisionMaterialData, binding_array(101))]
+#[bindless(index_table(range(50..52), binding(100)))]
 pub struct PortalVisionMaterial {
-    #[texture(50)]
+    #[reflect(ignore)]
+    pub clip: Option<[HalfSpace; 4]>,
+    #[texture(51)]
     pub texture: Handle<Image>,
+}
+
+#[derive(ShaderType, Debug, Clone, Copy)]
+pub struct PortalVisionMaterialData {
+    pub clip: [Vec4; 4],
+}
+
+impl From<&PortalVisionMaterial> for PortalVisionMaterialData {
+    fn from(value: &PortalVisionMaterial) -> Self {
+        Self {
+            clip: value
+                .clip
+                .map(|clip| clip.map(|hs| hs.normal_d()))
+                .unwrap_or([vec4(0., 1., 0., f32::INFINITY); 4]),
+        }
+    }
 }
 
 impl Material for PortalVisionMaterial {
@@ -141,17 +137,14 @@ pub fn build_portal_visions(
     let (camera_trns, frustum) = camera.into_inner();
     let viewer_trns = viewer.map(Single::into_inner).unwrap_or(camera_trns);
 
-    for (_, material_id, visible) in pool.map.values_mut() {
+    for (.., visible) in pool.map.values_mut() {
         *visible = false;
-        if camera_pool.needs_resize() {
-            _ = materials.get_mut(*material_id);
-        }
     }
 
     for (portal_trns, portal_aabb, portal, link) in &portals {
         let portal_affine = portal_trns.affine();
         let (scl, ..) = portal_affine.to_scale_rotation_translation();
-        if scl.x.abs() < 0.00001 || scl.y.abs() < 0.00001 || scl.z.abs() < 0.00001 {
+        if scl.x.abs() < 1e-6 || scl.y.abs() < 1e-6 || scl.z.abs() < 1e-6 {
             continue
         }
 
@@ -181,6 +174,7 @@ pub fn build_portal_visions(
 
         let other_portal_normal = other_portal_trns.forward() * orientation;
         let d = -other_portal_normal.dot(other_portal_trns.translation());
+        let portal_vision_clip = HalfSpace::through_square(viewer_trns.translation_vec3a(), portal_affine);
 
         camera_pool.obtain(&mut commands, &mut camera_pool_query, |commands, data| {
             data.camera.order = -1;
@@ -192,13 +186,17 @@ pub fn build_portal_visions(
             commands.entity(data.entity).insert((other_camera_trns, other_camera_local_trns));
             match pool.map.entry(data.image.id()) {
                 Entry::Occupied(occupied) => {
-                    let (e, .., ref mut visible) = *occupied.into_mut();
+                    let (e, material_id, ref mut visible) = *occupied.into_mut();
                     *visible = true;
 
+                    materials.get_mut(material_id).ok_or("Material is removed")?.clip = portal_vision_clip;
                     commands.entity(e).insert((vision_trns, vision_global_trns));
                 }
                 Entry::Vacant(vacant) => {
-                    let material = materials.add(PortalVisionMaterial { texture: data.image.clone() });
+                    let material = materials.add(PortalVisionMaterial {
+                        clip: portal_vision_clip,
+                        texture: data.image.clone(),
+                    });
                     let material_id = material.id();
                     vacant.insert((
                         commands
@@ -217,6 +215,7 @@ pub fn build_portal_visions(
                     ));
                 }
             }
+            Ok(())
         })?;
     }
 

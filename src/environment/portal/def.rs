@@ -17,7 +17,7 @@ pub struct Portal {
 
 impl Default for Portal {
     fn default() -> Self {
-        Self { vision_length: 6. }
+        Self { vision_length: 8. }
     }
 }
 

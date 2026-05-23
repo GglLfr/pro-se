@@ -9,6 +9,7 @@ pub mod prelude {
             primitives::{Aabb, Frustum, HalfSpace},
             visibility::{NoAutoAabb, RenderLayers, VisibilitySystems},
         },
+        core_pipeline::core_3d::{AlphaMask3d, Opaque3d, Transmissive3d, Transparent3d},
         ecs::{
             lifecycle::HookContext,
             query::{QueryData, QueryItem, ROQueryItem},
@@ -18,8 +19,9 @@ pub mod prelude {
             },
             world::DeferredWorld,
         },
+        math::Affine3A,
         mesh::{Indices, MeshVertexBufferLayoutRef, PrimitiveTopology},
-        pbr::{ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline},
+        pbr::{DrawMaterial, DrawPrepass, ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline, Shadow},
         platform::collections::{HashMap, hash_map::Entry},
         prelude::*,
         render::{
@@ -51,6 +53,7 @@ use crate::{
 pub mod camera;
 pub mod environment;
 pub mod gfx;
+pub mod math;
 
 #[derive(Reflect, States, Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[reflect(State, Debug, Default, Clone, PartialEq, /*TODO 0.19 PartialOrd,*/ Hash)]

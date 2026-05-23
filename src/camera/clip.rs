@@ -1,8 +1,3 @@
-use bevy::{
-    core_pipeline::core_3d::{AlphaMask3d, Opaque3d, Transmissive3d, Transparent3d},
-    pbr::{DrawMaterial, DrawPrepass, Shadow},
-};
-
 use crate::prelude::*;
 
 pub type ClipMaterial = ExtendedMaterial<StandardMaterial, Clip>;
@@ -67,6 +62,14 @@ pub enum ClipPlane {
     World(#[reflect(ignore)] HalfSpace),
 }
 
+#[derive(Reflect, Debug, Default, Clone, Copy)]
+#[reflect(Debug, Default, Clone)]
+pub enum ClipFrustum {
+    #[default]
+    Default,
+    Custom(Frustum),
+}
+
 /// [`PerspectiveProjection`], but uses clip distances instead of oblique projection.
 #[derive(Reflect, Debug, Clone)]
 #[reflect(Debug, Default, Clone)]
@@ -75,6 +78,7 @@ pub struct ClipProjection {
     pub aspect_ratio: f32,
     pub far: f32,
     pub clip: ClipPlane,
+    pub frustum: ClipFrustum,
 }
 
 impl Default for ClipProjection {
@@ -84,6 +88,7 @@ impl Default for ClipProjection {
             far: 1000.,
             aspect_ratio: 1.,
             clip: default(),
+            frustum: default(),
         }
     }
 }
@@ -126,12 +131,17 @@ impl CameraProjection for ClipProjection {
     }
 
     fn compute_frustum(&self, camera_transform: &GlobalTransform) -> Frustum {
-        let mut frustum = self.perspective().compute_frustum(camera_transform);
-        match self.clip {
-            ClipPlane::None => {}
-            ClipPlane::World(half_space) => frustum.half_spaces[Frustum::NEAR_PLANE_IDX] = half_space,
+        match self.frustum {
+            ClipFrustum::Default => {
+                let mut frustum = self.perspective().compute_frustum(camera_transform);
+                match self.clip {
+                    ClipPlane::None => {}
+                    ClipPlane::World(half_space) => frustum.half_spaces[Frustum::NEAR_PLANE_IDX] = half_space,
+                }
+                frustum
+            }
+            ClipFrustum::Custom(frustum) => frustum,
         }
-        frustum
     }
 }
 

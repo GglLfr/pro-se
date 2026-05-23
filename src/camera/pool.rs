@@ -214,14 +214,14 @@ impl CameraPool {
         &mut self,
         commands: &mut Commands,
         query: &mut CameraPoolQuery,
-        apply: impl FnOnce(&mut Commands, PooledCameraParams) -> T,
+        apply: impl FnOnce(&mut Commands, PooledCameraParams) -> Result<T>,
     ) -> Result<T> {
         if let Some(e) = self.free.pop() {
             self.allocated.push(e);
 
             let item = PooledCameraParams::from_item(query.get_mut(e)?)?;
             item.camera.is_active = true;
-            Ok(apply(commands, item))
+            apply(commands, item)
         } else {
             let mut camera = Camera::default();
             let image = self.image_provider.reserve_handle().typed_debug_checked::<Image>();
@@ -235,7 +235,7 @@ impl CameraPool {
                 camera: &mut camera,
                 projection: &mut projection,
                 layers: &mut layers,
-            });
+            })?;
 
             self.allocated.push(entity);
             self.images.push(image.clone());
