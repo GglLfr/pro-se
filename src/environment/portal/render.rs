@@ -91,12 +91,8 @@ pub struct PortalVisionMaterial {
 }
 
 impl Material for PortalVisionMaterial {
-    fn vertex_shader() -> ShaderRef {
-        ShaderRef::Default
-    }
-
     fn fragment_shader() -> ShaderRef {
-        ShaderRef::Default
+        ShaderRef::Path("shaders/environment/portal.wgsl".into())
     }
 
     fn enable_prepass() -> bool {
@@ -119,7 +115,7 @@ pub fn force_compute_portal_transform(
 #[derive(Reflect, Resource, Debug, Default)]
 #[reflect(Resource, Debug, Default)]
 pub struct PortalVisionPool {
-    map: HashMap<AssetId<Image>, (Entity, bool)>,
+    map: HashMap<AssetId<Image>, (Entity, AssetId<PortalVisionMaterial>, bool)>,
 }
 
 #[derive(Reflect, Component, Debug, Default, Clone, Copy)]
@@ -145,8 +141,11 @@ pub fn build_portal_visions(
     let (camera_trns, frustum) = camera.into_inner();
     let viewer_trns = viewer.map(Single::into_inner).unwrap_or(camera_trns);
 
-    for (.., visible) in pool.map.values_mut() {
+    for (_, material_id, visible) in pool.map.values_mut() {
         *visible = false;
+        if camera_pool.needs_resize() {
+            _ = materials.get_mut(*material_id);
+        }
     }
 
     for (portal_trns, portal_aabb, portal, link) in &portals {
@@ -176,21 +175,36 @@ pub fn build_portal_visions(
         .looking_to(portal_trns.forward() * orientation, Dir3::Z);
         let vision_global_trns = GlobalTransform::from(vision_trns);
 
+        let Ok(&other_portal_trns) = transforms.get(link.get()) else { continue };
+        let other_camera_trns = other_portal_trns * camera_trns.reparented_to(portal_trns);
+        let other_camera_local_trns = Transform::from(other_camera_trns);
+
+        let other_portal_normal = other_portal_trns.forward() * orientation;
+        let d = -other_portal_normal.dot(other_portal_trns.translation());
+
         camera_pool.obtain(&mut commands, &mut camera_pool_query, |commands, data| {
             data.camera.order = -1;
+            *data.projection = Projection::custom(ClipProjection {
+                clip: ClipPlane::World(HalfSpace::new(other_portal_normal.extend(d))),
+                ..default()
+            });
 
+            commands.entity(data.entity).insert((other_camera_trns, other_camera_local_trns));
             match pool.map.entry(data.image.id()) {
                 Entry::Occupied(occupied) => {
-                    let (e, visible) = occupied.into_mut();
+                    let (e, .., ref mut visible) = *occupied.into_mut();
                     *visible = true;
-                    commands.entity(*e).insert((vision_trns, vision_global_trns));
+
+                    commands.entity(e).insert((vision_trns, vision_global_trns));
                 }
                 Entry::Vacant(vacant) => {
+                    let material = materials.add(PortalVisionMaterial { texture: data.image.clone() });
+                    let material_id = material.id();
                     vacant.insert((
                         commands
                             .spawn((
                                 Mesh3d(vision_mesh.mesh.clone()),
-                                MeshMaterial3d(materials.add(PortalVisionMaterial { texture: data.image.clone() })),
+                                MeshMaterial3d(material),
                                 Aabb::from_min_max(vec3(-0.5, -0.5, -1.), vec3(0.5, 0.5, 1.)),
                                 NoAutoAabb,
                                 RenderLayers::layer(LAYER_PORTAL_RESERVE),
@@ -198,32 +212,15 @@ pub fn build_portal_visions(
                                 vision_global_trns,
                             ))
                             .id(),
+                        material_id,
                         true,
                     ));
                 }
             }
         })?;
-
-        /*let Ok(&other_portal_trns) = transforms.get(link.get()) else { continue };
-        let other_camera_trns = other_portal_trns * camera_trns.reparented_to(portal_trns);
-        let other_camera_local_trns = Transform::from(other_camera_trns);
-
-        let portal_normal = other_portal_trns.forward();
-        let orientation = portal_normal.dot(other_portal_trns.translation() - viewer_trns.translation()).signum();
-        let portal_normal = portal_normal * orientation;
-        let d = -portal_normal.dot(other_portal_trns.translation());
-
-        camera_pool.obtain(&mut commands, &mut camera_pool_query, |commands, data| {
-            *data.projection = Projection::custom(ClipProjection {
-                clip: ClipPlane::World(HalfSpace::new(portal_normal.extend(d))),
-                ..default()
-            });
-
-            commands.entity(data.entity).insert((other_camera_trns, other_camera_local_trns));
-        })?;*/
     }
 
-    for &(e, visible) in pool.map.values() {
+    for &(e, .., visible) in pool.map.values() {
         // May not exist yet if it just spawned.
         if let Ok(mut vis) = visibility.get_mut(e) {
             vis.set_if_neq(match visible {

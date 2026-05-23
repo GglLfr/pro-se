@@ -50,6 +50,7 @@ pub enum PooledCameraSystems {
 /// Yes, this means the primary camera is updated twice per frame, but oh well.
 //TODO 0.19 allows system removal
 pub fn update_primary_camera(
+    mut pool: ResMut<CameraPool>,
     window_resized_reader: MessageReader<WindowResized>,
     window_created_reader: MessageReader<WindowCreated>,
     window_scale_factor_changed_reader: MessageReader<WindowScaleFactorChanged>,
@@ -70,12 +71,14 @@ pub fn update_primary_camera(
         ),
         With<PrimaryCamera>,
     >,
+    mut last_size: Local<UVec2>,
 ) -> Result {
     // Assume `PrimaryCamera` has no parent entity.
     for (_, trns, mut global_trns, _, _, _, _) in &mut cameras {
         if trns.is_changed() {
             global_trns.set_if_neq(GlobalTransform::from(*trns));
         }
+        break
     }
 
     camera_system(
@@ -90,10 +93,16 @@ pub fn update_primary_camera(
         cameras.transmute_lens::<(&mut Camera, &RenderTarget, &mut Projection)>().query(),
     )?;
 
-    for (_, _, trns, mut frustum, _, _, projection) in &mut cameras {
+    for (_, _, trns, mut frustum, camera, _, projection) in &mut cameras {
+        let Some(size) = camera.physical_target_size() else { return Ok(()) };
+        if std::mem::replace(&mut *last_size, size) != size {
+            pool.needs_resize = true;
+        }
+
         if trns.is_changed() || projection.is_changed() {
             *frustum = projection.compute_frustum(&*trns);
         }
+        break
     }
 
     Ok(())
@@ -101,6 +110,7 @@ pub fn update_primary_camera(
 
 #[derive(Resource)]
 pub struct CameraPool {
+    needs_resize: bool,
     image_provider: AssetHandleProvider,
     images: Vec<Handle<Image>>,
     dirty_image: usize,
@@ -110,6 +120,7 @@ pub struct CameraPool {
 
 pub fn init_camera_pool(mut commands: Commands, images: Res<Assets<Image>>) {
     commands.insert_resource(CameraPool {
+        needs_resize: false,
         image_provider: images.get_handle_provider(),
         images: vec![],
         dirty_image: 0,
@@ -132,18 +143,17 @@ pub fn update_pooled_dirty_images(
     pool: ResMut<CameraPool>,
     mut images: ResMut<Assets<Image>>,
     camera: Single<(&Camera, Has<Hdr>), With<PrimaryCamera>>,
-    mut last_size: Local<UVec2>,
 ) -> Result {
     let (camera, is_hdr) = camera.into_inner();
     let Some(size) = camera.physical_target_size() else { return Ok(()) };
 
     let pool = pool.into_inner();
-    if std::mem::replace(&mut *last_size, size) != size {
+    if std::mem::replace(&mut pool.needs_resize, false) {
         pool.dirty_image = 0;
     }
 
     for handle in &pool.images[std::mem::replace(&mut pool.dirty_image, pool.images.len())..] {
-        images.insert(handle, Image {
+        let new = Image {
             asset_usage: RenderAssetUsages::RENDER_WORLD,
             ..Image::new_target_texture(
                 size.x,
@@ -154,7 +164,11 @@ pub fn update_pooled_dirty_images(
                 },
                 None,
             )
-        })?;
+        };
+        match images.get_mut(handle) {
+            None => images.insert(handle, new)?,
+            Some(image) => *image = new,
+        }
     }
 
     Ok(())
@@ -192,6 +206,10 @@ query_impl! {
 }
 
 impl CameraPool {
+    pub fn needs_resize(&self) -> bool {
+        self.needs_resize
+    }
+
     pub fn obtain<T>(
         &mut self,
         commands: &mut Commands,
