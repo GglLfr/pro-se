@@ -9,7 +9,8 @@ pub(super) fn plugin(app: &mut App) {
 #[require(
     Transform,
     Aabb::from_min_max(vec3(-0.5, -0.5, 0.), vec3(0.5, 0.5, 0.)),
-    Collider::cuboid(1., 1., 0.)
+    Collider::cuboid(1., 1., 0.),
+    Sensor,
 )]
 pub struct Portal {
     pub vision_length: f32,

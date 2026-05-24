@@ -23,8 +23,8 @@ pub fn spawn_camera(mut commands: Commands) {
         PrimaryCamera,
         RenderLayers::from_layers(&[0, LAYER_PORTAL_RESERVE]),
         PointLight {
-            range: 40.,
-            intensity: 4_000_000.0,
+            range: 60.,
+            intensity: 6_000_000.0,
             ..default()
         },
         Transform::from_xyz(0., 0., 30.).looking_at(Vec3::ZERO, Vec3::Y),

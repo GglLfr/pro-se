@@ -91,6 +91,10 @@ impl Material for PortalVisionMaterial {
         ShaderRef::Path("shaders/environment/portal.wgsl".into())
     }
 
+    //fn alpha_mode(&self) -> AlphaMode {
+    //AlphaMode::Premultiplied
+    //}
+
     fn enable_prepass() -> bool {
         false
     }

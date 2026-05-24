@@ -23,6 +23,7 @@ pub mod prelude {
         mesh::{Indices, MeshVertexBufferLayoutRef, PrimitiveTopology},
         pbr::{DrawMaterial, DrawPrepass, ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline, Shadow},
         platform::collections::{HashMap, hash_map::Entry},
+        post_process::bloom::Bloom,
         prelude::*,
         render::{
             Extract, Render, RenderApp, RenderPlugin, RenderStartup, RenderSystems,
@@ -160,7 +161,12 @@ fn game_init(
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-    ];
+    ]
+    .map(|row| {
+        let mut new_row = [1; 16 + 8 + 8];
+        new_row[8..][..16].copy_from_slice(&row);
+        new_row
+    });
 
     let mut portals = [Transform::IDENTITY; 4];
 
