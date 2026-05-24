@@ -124,24 +124,24 @@ fn game_init(
     next.set(GameState::InGame);
     let blocks = [
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5],
+        [2, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 5],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 1, 1, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 1, 1, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0],
         [0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 1, 1, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4],
+        [3, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 4],
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
     ];
 
-    let mut portals = [Transform::IDENTITY; 4];
+    let mut portals = [Transform::IDENTITY; 6];
 
     let cube = meshes.add(Cuboid::from_size(Vec3::ONE).mesh());
     let material = materials.add(ClipMaterial::default());
@@ -154,10 +154,17 @@ fn game_init(
             match block {
                 0 => {}
                 1 => {
-                    commands.spawn((trns, Mesh3d(cube.clone()), MeshMaterial3d(material.clone())));
+                    commands.spawn((
+                        trns,
+                        Mesh3d(cube.clone()),
+                        MeshMaterial3d(material.clone()),
+                        RigidBody::Static,
+                        Collider::cuboid(1., 1., 1.),
+                    ));
                 }
                 i @ 2..=5 => portals[i - 2] = trns.looking_to(Dir3::X, Dir3::Z),
-                6 => {
+                i @ 6..=7 => portals[i - 2] = trns.with_scale(vec3(16., 1., 1.)).looking_to(Dir3::Y, Dir3::Z),
+                8 => {
                     commands.spawn((trns, PortalVisionViewer));
                 }
                 unknown => panic!("Unknown block {unknown}"),
@@ -169,6 +176,8 @@ fn game_init(
     portals[1].translation += vec3(-0.5, -1., 0.);
     portals[2].translation += vec3(0.5, -1., 0.);
     portals[3].translation += vec3(0.5, 1., 0.);
+    portals[4].translation += vec3(0.5, -1., 0.);
+    portals[5].translation += vec3(0.5, 1., 0.);
 
     let a = commands
         .spawn((portals[0], Portal::default(), Shift(portals[0].translation.y, false, false)))
@@ -184,6 +193,9 @@ fn game_init(
     let d = commands
         .spawn((portals[3], Portal::default(), Shift(portals[3].translation.y, true, true)))
         .id();
-
     commands.entity(b).insert(PortalTo(d));
+
+    let e = commands.spawn((portals[4], Portal::default())).id();
+    let f = commands.spawn((portals[5], Portal::default())).id();
+    commands.entity(e).insert(PortalTo(f));
 }

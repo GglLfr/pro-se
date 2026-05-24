@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bevy_enhanced_input = "0.25"
 mimalloc-redirect = "*"
 
 [dependencies.avian3d]
-version = "0.6.1"
+version = "0.6"
 #git = "https://github.com/Jondolf/avian.git"
 default-features = false
 features = [
@@ -22,7 +23,7 @@ features = [
 ]
 
 [dependencies.bevy]
-version = "0.18.1"
+version = "0.18"
 default-features = false
 features = [
     "default_app",
