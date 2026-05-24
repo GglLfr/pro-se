@@ -190,7 +190,7 @@ pub fn build_portal_visions(
 
         let vision_trns = Transform {
             translation: portal_affine.translation.to_vec3(),
-            scale: vec3(1e3, portal.vision_length, portal.vision_length),
+            scale: (scl.xy() + 2. * portal.vision_length).extend(portal.vision_length),
             ..default()
         }
         .looking_to(portal_trns.forward() * orientation, Dir3::Z);

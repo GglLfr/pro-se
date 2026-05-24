@@ -253,10 +253,10 @@ fn apply_controls(keyboard: Res<ButtonInput<KeyCode>>, mut query: Query<&mut Tnu
 
     controller.basis = TnuaBuiltinWalk {
         desired_motion: direction.normalize_or_zero(),
-        ..Default::default()
+        ..default()
     };
 
     if keyboard.pressed(KeyCode::Space) {
-        controller.action(ControlScheme::Jump(Default::default()));
+        controller.action(ControlScheme::Jump(default()));
     }
 }
