@@ -90,7 +90,7 @@ fn main() -> AppExit {
             }),
             report_mimalloc_version,
             PhysicsPlugins::default(),
-            PhysicsDebugPlugin,
+            //PhysicsDebugPlugin,
             TnuaControllerPlugin::<ControlScheme>::new(FixedUpdate),
             TnuaAvian3dPlugin::new(FixedUpdate),
             EnhancedInputPlugin,
@@ -237,7 +237,7 @@ fn game_init(
     }
 
     let a = commands.spawn((portals[0], Portal::default())).id();
-    let b = commands.spawn((portals[1], Portal::default(), PortalTo(a))).id();
+    commands.spawn((portals[1], Portal::default(), PortalTo(a)));
 
     /*portals[0].translation += vec3(-0.5, 1., 0.);
     portals[1].translation += vec3(-0.5, -1., 0.);
