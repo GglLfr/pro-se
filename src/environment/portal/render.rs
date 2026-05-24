@@ -1,3 +1,8 @@
+use bevy::{
+    pbr::{MaterialPipeline, MaterialPipelineKey},
+    render::render_resource::Face,
+};
+
 use crate::{
     camera::{CameraPool, CameraPoolQuery, ClipPlane, ClipProjection, PooledCameraSystems, PrimaryCamera},
     environment::portal::{Portal, PortalLink},
@@ -33,23 +38,23 @@ pub fn init_portal_vision_mesh(mut commands: Commands, mut meshes: ResMut<Assets
             let max = vec3(0.5, 0.5, 0.);
 
             let vertices = vec![
-                [min.x, min.y, min.z],
-                [max.x, min.y, min.z],
-                [max.x, max.y, min.z],
-                [min.x, max.y, min.z],
                 [min.x, min.y, max.z],
                 [max.x, min.y, max.z],
-                [max.x, max.y, max.z],
+                [max.x, min.y, min.z],
+                [min.x, min.y, min.z],
                 [min.x, max.y, max.z],
+                [max.x, max.y, max.z],
+                [max.x, max.y, min.z],
+                [min.x, max.y, min.z],
             ];
 
             let indices = Indices::U32(vec![
                 0, 1, 2, 2, 3, 0, // Bottom.
-                0, 1, 5, 5, 4, 0, // Front.
-                1, 2, 6, 6, 5, 1, // Right.
-                2, 3, 7, 7, 6, 2, // Back.
-                3, 0, 4, 4, 7, 3, // Left.
-                4, 5, 6, 6, 7, 4, // Top.
+                0, 4, 5, 5, 1, 0, // Front.
+                1, 5, 6, 6, 2, 1, // Right.
+                2, 6, 7, 7, 3, 2, // Back.
+                3, 7, 4, 4, 0, 3, // Left.
+                4, 7, 6, 6, 5, 4, // Top.
             ]);
 
             Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
@@ -65,23 +70,32 @@ pub fn init_portal_vision_mesh(mut commands: Commands, mut meshes: ResMut<Assets
 #[bindless(index_table(range(50..52), binding(100)))]
 pub struct PortalVisionMaterial {
     #[reflect(ignore)]
-    pub clip: Option<[HalfSpace; 4]>,
+    pub clip: (HalfSpace, Option<[HalfSpace; 4]>),
+    pub vision_length: f32,
     #[texture(51)]
     pub texture: Handle<Image>,
 }
 
 #[derive(ShaderType, Debug, Clone, Copy)]
 pub struct PortalVisionMaterialData {
-    pub clip: [Vec4; 4],
+    pub clip: [Vec4; 5],
+    pub vision_length: f32,
 }
 
 impl From<&PortalVisionMaterial> for PortalVisionMaterialData {
     fn from(value: &PortalVisionMaterial) -> Self {
-        Self {
-            clip: value
+        let mut clip = [value.clip.0.normal_d(); 5];
+        clip[..4].copy_from_slice(
+            &value
                 .clip
+                .1
                 .map(|clip| clip.map(|hs| hs.normal_d()))
                 .unwrap_or([vec4(0., 1., 0., f32::INFINITY); 4]),
+        );
+
+        Self {
+            clip,
+            vision_length: value.vision_length,
         }
     }
 }
@@ -91,9 +105,9 @@ impl Material for PortalVisionMaterial {
         ShaderRef::Path("shaders/environment/portal.wgsl".into())
     }
 
-    //fn alpha_mode(&self) -> AlphaMode {
-    //AlphaMode::Premultiplied
-    //}
+    fn alpha_mode(&self) -> AlphaMode {
+        AlphaMode::Blend
+    }
 
     fn enable_prepass() -> bool {
         false
@@ -101,6 +115,16 @@ impl Material for PortalVisionMaterial {
 
     fn enable_shadows() -> bool {
         false
+    }
+
+    fn specialize(
+        _pipeline: &MaterialPipeline,
+        descriptor: &mut RenderPipelineDescriptor,
+        _layout: &MeshVertexBufferLayoutRef,
+        _key: MaterialPipelineKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        descriptor.primitive.cull_mode = Some(Face::Front);
+        Ok(())
     }
 }
 
@@ -166,7 +190,7 @@ pub fn build_portal_visions(
 
         let vision_trns = Transform {
             translation: portal_affine.translation.to_vec3(),
-            scale: (scl.xy() + 2. * portal.vision_length).extend(portal.vision_length),
+            scale: vec3(1e3, portal.vision_length, portal.vision_length),
             ..default()
         }
         .looking_to(portal_trns.forward() * orientation, Dir3::Z);
@@ -187,18 +211,26 @@ pub fn build_portal_visions(
                 ..default()
             });
 
+            let normal = portal_trns.forward().to_vec3a() * orientation;
+            let d = -normal.dot(portal_trns.translation_vec3a());
+            let entrance_clip = HalfSpace::new(normal.extend(d));
+
             commands.entity(data.entity).insert((other_camera_trns, other_camera_local_trns));
             match pool.map.entry(data.image.id()) {
                 Entry::Occupied(occupied) => {
                     let (e, material_id, ref mut visible) = *occupied.into_mut();
                     *visible = true;
 
-                    materials.get_mut(material_id).ok_or("Material is removed")?.clip = portal_vision_clip;
+                    let material = materials.get_mut(material_id).ok_or("Material is removed")?;
+                    material.clip = (entrance_clip, portal_vision_clip);
+                    material.vision_length = portal.vision_length;
+
                     commands.entity(e).insert((vision_trns, vision_global_trns));
                 }
                 Entry::Vacant(vacant) => {
                     let material = materials.add(PortalVisionMaterial {
-                        clip: portal_vision_clip,
+                        clip: (entrance_clip, portal_vision_clip),
+                        vision_length: portal.vision_length,
                         texture: data.image.clone(),
                     });
                     let material_id = material.id();

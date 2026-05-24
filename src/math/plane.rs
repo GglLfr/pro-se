@@ -1,7 +1,7 @@
 use crate::prelude::*;
 
 pub trait HalfSpaceExt {
-    fn to_half_space(self) -> HalfSpace;
+    fn as_half_space(&self) -> HalfSpace;
 
     fn from_points_facing(a: Vec3A, b: Vec3A, toward: Vec3A) -> Option<HalfSpace> {
         let ab = b - a;
@@ -30,17 +30,17 @@ pub trait HalfSpaceExt {
 }
 
 impl HalfSpaceExt for HalfSpace {
-    fn to_half_space(self) -> HalfSpace {
-        self
+    fn as_half_space(&self) -> HalfSpace {
+        *self
     }
 }
 
 pub trait FrustumExt {
-    fn to_frustum(self) -> Frustum;
+    fn as_frustum(&self) -> Frustum;
 }
 
 impl FrustumExt for Frustum {
-    fn to_frustum(self) -> Frustum {
-        self
+    fn as_frustum(&self) -> Frustum {
+        *self
     }
 }

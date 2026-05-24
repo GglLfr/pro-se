@@ -102,19 +102,15 @@ fn move_around(time: Res<Time>, mut transforms: Query<(&mut Transform, &Shift)>)
     for (trns, mov) in &mut transforms {
         let trns = trns.into_inner();
         trns.translation.y = match (mov.1, mov.2) {
-            (false, false) => mov.0 - t * 7.,
-            (false, true) => mov.0 - t * 7. + 7.,
-            (true, false) => mov.0 + t * 7.,
-            (true, true) => mov.0 + t * 7. - 7.,
-            //(false, false) => mov.0 - (t * 15. - 1.).max(0.) / 2.,
-            //(false, true) => mov.0 - ((t * 15. + 1.).min(15.) - 1.) / 2. + 7.,
-            //(true, false) => mov.0 + (t * 15. - 1.).max(0.) / 2.,
-            //(true, true) => mov.0 + ((t * 15. + 1.).min(15.) - 1.) / 2. - 7.,
+            (false, false) => mov.0 - t * 7.5,
+            (false, true) => mov.0 - t * 7.5 + 7.5,
+            (true, false) => mov.0 + t * 7.5,
+            (true, true) => mov.0 + t * 7.5 - 7.5,
         };
 
         trns.scale.x = match (mov.1, mov.2) {
-            (false, false) | (true, false) => t * 14.,
-            (false, true) | (true, true) => (1. - t) * 14.,
+            (false, false) | (true, false) => t * 15.,
+            (false, true) | (true, true) => (1. - t) * 15.,
         };
     }
 }
@@ -127,15 +123,6 @@ fn game_init(
 ) {
     next.set(GameState::InGame);
     let blocks = [
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
         [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -152,21 +139,7 @@ fn game_init(
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4],
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-    ]
-    .map(|row| {
-        let mut new_row = [1; 16 + 8 + 8];
-        new_row[8..][..16].copy_from_slice(&row);
-        new_row
-    });
+    ];
 
     let mut portals = [Transform::IDENTITY; 4];
 
@@ -192,25 +165,25 @@ fn game_init(
         }
     }
 
-    portals[0].translation += vec3(-0.5, 0.5, 0.);
-    portals[1].translation += vec3(-0.5, -0.5, 0.);
-    portals[2].translation += vec3(0.5, -0.5, 0.);
-    portals[3].translation += vec3(0.5, 0.5, 0.);
+    portals[0].translation += vec3(-0.5, 1., 0.);
+    portals[1].translation += vec3(-0.5, -1., 0.);
+    portals[2].translation += vec3(0.5, -1., 0.);
+    portals[3].translation += vec3(0.5, 1., 0.);
 
     let a = commands
         .spawn((portals[0], Portal::default(), Shift(portals[0].translation.y, false, false)))
         .id();
-    let b = commands
-        .spawn((portals[1], Portal::default(), Shift(portals[1].translation.y, false, true)))
-        .id();
-
     let c = commands
         .spawn((portals[2], Portal::default(), Shift(portals[2].translation.y, true, false)))
+        .id();
+    commands.entity(a).insert(PortalTo(c));
+
+    let b = commands
+        .spawn((portals[1], Portal::default(), Shift(portals[1].translation.y, false, true)))
         .id();
     let d = commands
         .spawn((portals[3], Portal::default(), Shift(portals[3].translation.y, true, true)))
         .id();
 
-    commands.entity(a).insert(PortalTo(c));
     commands.entity(b).insert(PortalTo(d));
 }
