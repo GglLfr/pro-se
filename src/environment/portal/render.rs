@@ -4,10 +4,10 @@ use bevy::{
 };
 
 use crate::{
-    camera::{CameraPool, CameraPoolQuery, ClipPlane, ClipProjection, PooledCameraSystems, PrimaryCamera},
+    camera::{CameraPool, CameraPoolQuery, ClipFrustum, ClipPlane, ClipProjection, PooledCameraSystems, PrimaryCamera},
     environment::portal::{Portal, PortalLink},
     gfx::LAYER_PORTAL_RESERVE,
-    math::HalfSpaceExt as _,
+    math::{FrustumExt as _, GlobalTransformExt as _, HalfSpaceExt as _},
     prelude::*,
 };
 
@@ -32,11 +32,11 @@ pub struct PortalVisionMesh {
 }
 
 pub fn init_portal_vision_mesh(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
+    let min = vec3(-0.5, -0.5, -1.);
+    let max = vec3(0.5, 0.5, 0.);
+
     commands.insert_resource(PortalVisionMesh {
         mesh: meshes.add({
-            let min = vec3(-0.5, -0.5, -1.);
-            let max = vec3(0.5, 0.5, 0.);
-
             let vertices = vec![
                 [min.x, min.y, max.z],
                 [max.x, min.y, max.z],
@@ -159,57 +159,65 @@ pub fn build_portal_visions(
     camera: Single<(&GlobalTransform, &Frustum), With<PrimaryCamera>>,
     portals: Query<(&GlobalTransform, &Aabb, &Portal, PortalLink)>,
     transforms: Query<&GlobalTransform>,
+    spatial_query: SpatialQuery,
 ) -> Result {
     use bevy::camera::primitives::Sphere;
 
-    let (camera_trns, frustum) = camera.into_inner();
-    let viewer_trns = viewer.map(Single::into_inner).unwrap_or(camera_trns);
+    fn handle(
+        commands: &mut Commands,
+        camera_trns: &GlobalTransform,
+        viewer_trns: &GlobalTransform,
+        portal_trns: &GlobalTransform,
+        portal: &Portal,
+        other_portal: Entity,
+        camera_pool: &mut CameraPool,
+        camera_pool_query: &mut CameraPoolQuery,
+        pool: &mut PortalVisionPool,
+        vision_mesh: &PortalVisionMesh,
+        materials: &mut Assets<PortalVisionMaterial>,
+        portals: &Query<(&GlobalTransform, &Aabb, &Portal, PortalLink)>,
+        transforms: &Query<&GlobalTransform>,
+        spatial_query: &SpatialQuery,
+        depth: usize,
+        count: &mut usize,
+    ) -> Result {
+        let Ok(&other_portal_trns) = transforms.get(other_portal) else { return Ok(()) };
+        let map_transform = other_portal_trns * portal_trns.inverse();
 
-    for (.., visible) in pool.map.values_mut() {
-        *visible = false;
-    }
-
-    for (portal_trns, portal_aabb, portal, link) in &portals {
         let portal_affine = portal_trns.affine();
-        let (scl, ..) = portal_affine.to_scale_rotation_translation();
-        if scl.x.abs() < 1e-6 || scl.y.abs() < 1e-6 || scl.z.abs() < 1e-6 {
-            continue
-        }
-
-        let model_sphere = Sphere {
-            center: portal_affine.transform_point3a(portal_aabb.center),
-            radius: portal_trns.radius_vec3a(portal_aabb.half_extents),
-        };
-
-        if !frustum.intersects_sphere(&model_sphere, false) || !frustum.intersects_obb(portal_aabb, &portal_affine, true, false) {
-            continue
-        }
-
         let viewer_to_portal = portal_affine.translation - viewer_trns.translation_vec3a();
         let orientation = viewer_to_portal.dot(portal_trns.forward().to_vec3a()).signum();
 
+        let vision_bounds = (portal_affine.to_scale_rotation_translation().0.xy() + 2. * portal.vision_length).extend(portal.vision_length);
         let vision_trns = Transform {
             translation: portal_affine.translation.to_vec3(),
-            scale: (scl.xy() + 2. * portal.vision_length).extend(portal.vision_length),
+            scale: vision_bounds,
             ..default()
         }
         .looking_to(portal_trns.forward() * orientation, Dir3::Z);
         let vision_global_trns = GlobalTransform::from(vision_trns);
+        let vision_layer = LAYER_PORTAL_RESERVE + *count;
+        *count += 1;
 
-        let Ok(&other_portal_trns) = transforms.get(link.get()) else { continue };
-        let other_camera_trns = other_portal_trns * camera_trns.reparented_to(portal_trns);
+        let other_camera_trns = map_transform.mul(camera_trns);
         let other_camera_local_trns = Transform::from(other_camera_trns);
-
-        let other_portal_normal = other_portal_trns.forward() * orientation;
-        let d = -other_portal_normal.dot(other_portal_trns.translation());
         let portal_vision_clip = HalfSpace::through_square(viewer_trns.translation_vec3a(), portal_affine);
 
-        camera_pool.obtain(&mut commands, &mut camera_pool_query, |commands, data| {
-            data.camera.order = -1;
+        camera_pool.obtain(commands, camera_pool_query, |commands, data| {
+            data.camera.order = -(depth as isize + 1);
             *data.projection = Projection::custom(ClipProjection {
-                clip: ClipPlane::World(HalfSpace::new(other_portal_normal.extend(d))),
+                clip: ClipPlane::World(HalfSpace::from_point_normal(
+                    other_portal_trns.translation_vec3a(),
+                    other_portal_trns.forward().to_vec3a() * orientation,
+                )),
+                frustum: ClipFrustum::Custom(Frustum::cuboid(
+                    map_transform.mul(&vision_global_trns).affine(),
+                    vec3a(-0.5, -0.5, 0.),
+                    vec3a(0.5, 0.5, -1.),
+                )),
                 ..default()
             });
+            *data.layers = RenderLayers::from_iter([0, vision_layer + 1]); // +1 so it only renders subsequent portal visions.
 
             let normal = portal_trns.forward().to_vec3a() * orientation;
             let d = -normal.dot(portal_trns.translation_vec3a());
@@ -225,7 +233,9 @@ pub fn build_portal_visions(
                     material.clip = (entrance_clip, portal_vision_clip);
                     material.vision_length = portal.vision_length;
 
-                    commands.entity(e).insert((vision_trns, vision_global_trns));
+                    commands
+                        .entity(e)
+                        .insert((RenderLayers::from_iter([vision_layer]), vision_trns, vision_global_trns));
                 }
                 Entry::Vacant(vacant) => {
                     let material = materials.add(PortalVisionMaterial {
@@ -241,7 +251,7 @@ pub fn build_portal_visions(
                                 MeshMaterial3d(material),
                                 Aabb::from_min_max(vec3(-0.5, -0.5, -1.), vec3(0.5, 0.5, 1.)),
                                 NoAutoAabb,
-                                RenderLayers::layer(LAYER_PORTAL_RESERVE),
+                                RenderLayers::from_iter([vision_layer]),
                                 vision_trns,
                                 vision_global_trns,
                             ))
@@ -253,6 +263,92 @@ pub fn build_portal_visions(
             }
             Ok(())
         })?;
+
+        let mapped_vision_bounds = Mat3A::from_cols(
+            map_transform.affine().x_axis.abs(),
+            map_transform.affine().y_axis.abs(),
+            map_transform.affine().z_axis.abs(),
+        ) * vision_bounds.to_vec3a();
+
+        let mut last_result = Ok(());
+        if depth < 6 {
+            spatial_query.shape_intersections_callback(
+                &Collider::cuboid(mapped_vision_bounds.x, mapped_vision_bounds.y, mapped_vision_bounds.z),
+                other_portal_trns.translation() + other_portal_trns.forward() * orientation * mapped_vision_bounds.z / 2.,
+                other_portal_trns.rotation() * orientation,
+                &SpatialQueryFilter::DEFAULT,
+                |e| {
+                    if e != other_portal
+                        && let Ok((next_portal_trns, _, next_portal, next_link)) = portals.get(e)
+                    {
+                        last_result = handle(
+                            commands,
+                            &other_camera_trns,
+                            viewer_trns,
+                            next_portal_trns,
+                            next_portal,
+                            next_link.get(),
+                            camera_pool,
+                            camera_pool_query,
+                            pool,
+                            vision_mesh,
+                            materials,
+                            portals,
+                            transforms,
+                            spatial_query,
+                            depth + 1,
+                            count,
+                        );
+                    }
+
+                    // Short-circuit the shape intersection check if errored.
+                    last_result.is_ok()
+                },
+            );
+        }
+
+        last_result
+    }
+    let (camera_trns, frustum) = camera.into_inner();
+    let viewer_trns = viewer.map(Single::into_inner).unwrap_or(camera_trns);
+
+    for (.., visible) in pool.map.values_mut() {
+        *visible = false;
+    }
+
+    for (portal_trns, portal_aabb, portal, link) in &portals {
+        let (scl, ..) = portal_trns.to_scale_rotation_translation();
+        if scl.x.abs() < 1e-6 || scl.y.abs() < 1e-6 || scl.z.abs() < 1e-6 {
+            continue
+        }
+
+        let model_sphere = Sphere {
+            center: portal_trns.affine().transform_point3a(portal_aabb.center),
+            radius: portal_trns.radius_vec3a(portal_aabb.half_extents),
+        };
+
+        if !frustum.intersects_sphere(&model_sphere, false) || !frustum.intersects_obb(portal_aabb, &portal_trns.affine(), true, false) {
+            continue
+        }
+
+        handle(
+            &mut commands,
+            camera_trns,
+            viewer_trns,
+            portal_trns,
+            portal,
+            link.get(),
+            &mut camera_pool,
+            &mut camera_pool_query,
+            &mut pool,
+            &vision_mesh,
+            &mut materials,
+            &portals,
+            &transforms,
+            &spatial_query,
+            0,
+            &mut 0,
+        )?;
     }
 
     for &(e, .., visible) in pool.map.values() {

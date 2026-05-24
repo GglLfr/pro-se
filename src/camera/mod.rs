@@ -21,7 +21,7 @@ pub(super) fn plugin(app: &mut App) {
 pub fn spawn_camera(mut commands: Commands) {
     commands.spawn((
         PrimaryCamera,
-        RenderLayers::from_layers(&[0, LAYER_PORTAL_RESERVE]),
+        RenderLayers::from_iter([0, LAYER_PORTAL_RESERVE]),
         PointLight {
             range: 60.,
             intensity: 6_000_000.0,

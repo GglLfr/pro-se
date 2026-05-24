@@ -138,7 +138,22 @@ fn game_init(
 ) {
     next.set(GameState::InGame);
     let blocks = [
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 0, 3, 0, 0, 1, 1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 1],
+        [1, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+        [1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        /*[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
         [2, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 5],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0],
@@ -153,7 +168,7 @@ fn game_init(
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [3, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 4],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],*/
     ];
 
     let mut portals = [Transform::IDENTITY; 6];
@@ -177,8 +192,21 @@ fn game_init(
                         Collider::cuboid(1., 1., 1.),
                     ));
                 }
-                i @ 2..=5 => portals[i - 2] = trns.looking_to(Dir3::X, Dir3::Z),
-                i @ 6..=7 => portals[i - 2] = trns.with_scale(vec3(16., 1., 1.)).looking_to(Dir3::Y, Dir3::Z),
+                2 => {
+                    portals[0] = trns
+                        .with_translation(trns.translation + vec3(0.5, 0.5, 0.))
+                        .looking_to(Dir3::X, Dir3::Z)
+                        .with_scale(Vec3::splat(2.))
+                }
+                3 => {
+                    portals[1] = trns
+                        .with_translation(trns.translation + vec3(0.5, 0.5, 0.))
+                        .looking_to(Dir3::NEG_Y, Dir3::Z)
+                        .with_scale(Vec3::splat(4.))
+                }
+                4..=7 => {}
+                //i @ 2..=5 => portals[i - 2] = trns.looking_to(Dir3::X, Dir3::Z),
+                //i @ 6..=7 => portals[i - 2] = trns.with_scale(vec3(16., 1., 1.)).looking_to(Dir3::Y, Dir3::Z),
                 8 => {
                     commands.spawn((
                         Mesh3d(meshes.add(Capsule3d {
@@ -208,7 +236,10 @@ fn game_init(
         }
     }
 
-    portals[0].translation += vec3(-0.5, 1., 0.);
+    let a = commands.spawn((portals[0], Portal::default())).id();
+    let b = commands.spawn((portals[1], Portal::default(), PortalTo(a))).id();
+
+    /*portals[0].translation += vec3(-0.5, 1., 0.);
     portals[1].translation += vec3(-0.5, -1., 0.);
     portals[2].translation += vec3(0.5, -1., 0.);
     portals[3].translation += vec3(0.5, 1., 0.);
@@ -233,7 +264,7 @@ fn game_init(
 
     let e = commands.spawn((portals[4], Portal::default())).id();
     let f = commands.spawn((portals[5], Portal::default())).id();
-    commands.entity(e).insert(PortalTo(f));
+    commands.entity(e).insert(PortalTo(f));*/
 }
 
 fn apply_controls(keyboard: Res<ButtonInput<KeyCode>>, mut query: Query<&mut TnuaController<ControlScheme>>) {
