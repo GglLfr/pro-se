@@ -41,9 +41,14 @@ pub mod prelude {
         shader::{ShaderDefVal, ShaderRef},
         window::{PrimaryWindow, WindowCreated, WindowResized, WindowScaleFactorChanged},
     };
+    pub use bevy_enhanced_input::prelude::{self::*, Cancel, Press, Release};
+    pub use bevy_tnua::prelude::*;
+    pub use bevy_tnua_avian3d::prelude::*;
     pub use mimalloc_redirect::MiMalloc;
 }
 
+use bevy_tnua::builtins::{TnuaBuiltinJumpConfig, TnuaBuiltinWalkConfig};
+use bevy_tnua_avian3d::TnuaAvian3dPlugin;
 use prelude::*;
 
 use crate::{
@@ -86,11 +91,14 @@ fn main() -> AppExit {
             report_mimalloc_version,
             PhysicsPlugins::default(),
             PhysicsDebugPlugin,
+            TnuaControllerPlugin::<ControlScheme>::new(FixedUpdate),
+            TnuaAvian3dPlugin::new(FixedUpdate),
+            EnhancedInputPlugin,
             (camera::plugin, environment::plugin, gfx::plugin),
         ))
         .init_state::<GameState>()
         .add_systems(Startup, game_init)
-        .add_systems(Update, move_around)
+        .add_systems(Update, (move_around, apply_controls.in_set(TnuaUserControlsSystems)))
         .run()
 }
 
@@ -115,11 +123,18 @@ fn move_around(time: Res<Time>, mut transforms: Query<(&mut Transform, &Shift)>)
     }
 }
 
+#[derive(TnuaScheme)]
+#[scheme(basis = TnuaBuiltinWalk)]
+enum ControlScheme {
+    Jump(TnuaBuiltinJump),
+}
+
 fn game_init(
     mut commands: Commands,
     mut next: ResMut<NextState<GameState>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ClipMaterial>>,
+    mut control_scheme_configs: ResMut<Assets<ControlSchemeConfig>>,
 ) {
     next.set(GameState::InGame);
     let blocks = [
@@ -165,7 +180,28 @@ fn game_init(
                 i @ 2..=5 => portals[i - 2] = trns.looking_to(Dir3::X, Dir3::Z),
                 i @ 6..=7 => portals[i - 2] = trns.with_scale(vec3(16., 1., 1.)).looking_to(Dir3::Y, Dir3::Z),
                 8 => {
-                    commands.spawn((trns, PortalVisionViewer));
+                    commands.spawn((
+                        Mesh3d(meshes.add(Capsule3d {
+                            radius: 0.4,
+                            half_length: 0.4,
+                        })),
+                        MeshMaterial3d(material.clone()),
+                        PortalVisionViewer,
+                        trns,
+                        RigidBody::Dynamic,
+                        Collider::capsule(0.4, 0.8),
+                        TnuaController::<ControlScheme>::default(),
+                        TnuaConfig::<ControlScheme>(control_scheme_configs.add(ControlSchemeConfig {
+                            basis: TnuaBuiltinWalkConfig {
+                                speed: 10.,
+                                float_height: 1.,
+                                ..default()
+                            },
+                            jump: TnuaBuiltinJumpConfig { height: 4., ..default() },
+                        })),
+                        TnuaAvian3dSensorShape(Collider::cylinder(0.39, 0.0)),
+                        LockedAxes::ROTATION_LOCKED.lock_translation_z(),
+                    ));
                 }
                 unknown => panic!("Unknown block {unknown}"),
             }
@@ -198,4 +234,29 @@ fn game_init(
     let e = commands.spawn((portals[4], Portal::default())).id();
     let f = commands.spawn((portals[5], Portal::default())).id();
     commands.entity(e).insert(PortalTo(f));
+}
+
+fn apply_controls(keyboard: Res<ButtonInput<KeyCode>>, mut query: Query<&mut TnuaController<ControlScheme>>) {
+    let Ok(mut controller) = query.single_mut() else {
+        return;
+    };
+    controller.initiate_action_feeding();
+
+    let mut direction = Vec3::ZERO;
+
+    if keyboard.pressed(KeyCode::ArrowLeft) {
+        direction -= Vec3::X;
+    }
+    if keyboard.pressed(KeyCode::ArrowRight) {
+        direction += Vec3::X;
+    }
+
+    controller.basis = TnuaBuiltinWalk {
+        desired_motion: direction.normalize_or_zero(),
+        ..Default::default()
+    };
+
+    if keyboard.pressed(KeyCode::Space) {
+        controller.action(ControlScheme::Jump(Default::default()));
+    }
 }
