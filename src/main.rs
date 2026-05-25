@@ -51,8 +51,8 @@ use bevy_tnua::builtins::{TnuaBuiltinJumpConfig, TnuaBuiltinWalkConfig};
 use bevy_tnua_avian3d::TnuaAvian3dPlugin;
 
 use crate::{
-    camera::ClipMaterial,
-    environment::portal::{Portal, PortalCollisionHooks, PortalTo, PortalVisionViewer},
+    camera::{ClipMaterial, PrimaryCamera},
+    environment::portal::{Portal, PortalCollisionHooks, PortalTo, PortalVisionViewer, Teleported},
     prelude::*,
 };
 
@@ -98,8 +98,65 @@ fn main() -> AppExit {
         ))
         .init_state::<GameState>()
         .add_systems(Startup, game_init)
-        .add_systems(Update, (move_around, apply_controls.in_set(TnuaUserControlsSystems)))
+        .add_systems(Update, (move_around, lerp, apply_controls.in_set(TnuaUserControlsSystems)))
+        .add_observer(move_camera_on_portal)
         .run()
+}
+
+#[derive(Component)]
+struct Lerp {
+    rot: [Quat; 2],
+    scl: [Vec3; 2],
+    pos: Option<[Vec3; 2]>,
+    started: f32,
+}
+
+fn move_camera_on_portal(
+    teleported: On<Teleported>,
+    mut commands: Commands,
+    time: Res<Time>,
+    camera: Single<(Entity, &mut Transform), With<PrimaryCamera>>,
+) {
+    let (camera_entity, mut camera) = camera.into_inner();
+    let (scale, rotation, translation) = (teleported.map_transform * camera.compute_affine()).to_scale_rotation_translation();
+
+    commands.entity(camera_entity).insert(Lerp {
+        rot: [rotation, camera.rotation],
+        scl: [scale, camera.scale],
+        pos: Some([translation, camera.translation]),
+        started: time.elapsed_secs(),
+    });
+
+    *camera = Transform {
+        scale,
+        rotation,
+        translation,
+    };
+
+    let (scale, rotation, ..) = teleported.map_transform.to_scale_rotation_translation();
+    commands.entity(teleported.entity).insert(Lerp {
+        rot: [rotation, Quat::IDENTITY],
+        scl: [scale, Vec3::ONE],
+        pos: None,
+        started: time.elapsed_secs(),
+    });
+}
+
+fn lerp(mut commands: Commands, time: Res<Time>, mut lerps: Query<(Entity, &mut Transform, &Lerp)>) {
+    for (e, mut trns, lerp) in &mut lerps {
+        let t = ((time.elapsed_secs() - lerp.started) / 0.5).min(1.);
+        let t = t * t * (3. - 2. * t);
+
+        trns.rotation = lerp.rot[0].slerp(lerp.rot[1], t);
+        trns.scale = lerp.scl[0].lerp(lerp.scl[1], t);
+        if let Some(pos) = lerp.pos {
+            trns.translation = pos[0].lerp(pos[1], t);
+        }
+
+        if t >= 1. {
+            commands.entity(e).remove::<Lerp>();
+        }
+    }
 }
 
 #[derive(Component)]
@@ -237,6 +294,8 @@ fn game_init(
             }
         }
     }
+
+    commands.spawn((PointLight::default(), Transform::from_xyz(0., 0., 4.)));
 
     let a = commands.spawn((portals[0], Portal::default())).id();
     commands.spawn((portals[1], Portal::default(), PortalTo(a)));

@@ -15,10 +15,7 @@ pub(super) fn plugin(app: &mut App) {
     app.add_plugins(MaterialPlugin::<PortalVisionMaterial>::default())
         .register_asset_reflect::<PortalVisionMaterial>()
         .init_resource::<PortalVisionPool>()
-        .insert_resource(PortalRenderLimits {
-            max_depth: 6,
-            max_render: 18,
-        })
+        .insert_resource(PortalRenderLimits { max_depth: 4, max_render: 6 })
         .add_systems(Startup, init_portal_vision_mesh)
         .add_systems(
             PostUpdate,
@@ -33,6 +30,7 @@ pub(super) fn plugin(app: &mut App) {
 #[reflect(Resource, Debug, Clone)]
 pub struct PortalRenderLimits {
     pub max_depth: usize,
+    /// Maximum additional renders *after* the top-level portals have rendered.
     pub max_render: usize,
 }
 
@@ -206,12 +204,10 @@ pub fn build_portal_visions(
         ping.push((camera_trns, viewer_trns, portal_trns, portal, link.get(), next_layer));
     }
 
-    let mut count = 0;
-    'breadth: for depth in 0..limits.max_depth {
-        if ping.is_empty() {
-            break
-        }
+    let mandatory = ping.len();
+    let mut count = 0usize;
 
+    'breadth: for depth in 0..limits.max_depth {
         for (camera_trns, viewer_trns, portal_trns, portal, other_portal, layer) in ping.drain(..) {
             next_layer += 1;
             create_portal_vision(
@@ -236,12 +232,15 @@ pub fn build_portal_visions(
             )?;
 
             count += 1;
-            if count >= limits.max_render {
+            if count.saturating_sub(mandatory) >= limits.max_render {
                 break 'breadth
             }
         }
 
         ping.append(pong);
+        if ping.is_empty() {
+            break
+        }
     }
 
     for &(e, .., visible) in pool.map.values() {
@@ -257,7 +256,6 @@ pub fn build_portal_visions(
     Ok(())
 }
 
-//TODO lower camera resolution for enough depth values
 fn create_portal_vision(
     commands: &mut Commands,
     camera_trns: GlobalTransform,
@@ -306,6 +304,7 @@ fn create_portal_vision(
                 other_portal_trns.translation_vec3a(),
                 other_portal_trns.forward().to_vec3a() * orientation,
             )),
+            //TODO user-defined half-space
             frustum: ClipFrustum::Custom(Frustum::cuboid(
                 map_transform.mul(&vision_global_trns).affine(),
                 vec3a(-0.5, -0.5, 0.),
@@ -360,6 +359,7 @@ fn create_portal_vision(
         Ok(())
     })?;
 
+    //TODO more culls
     let mapped_vision_bounds = Mat3A::from_cols(
         map_transform.affine().x_axis.abs(),
         map_transform.affine().y_axis.abs(),

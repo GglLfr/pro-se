@@ -4569,7 +4569,9 @@ dependencies = [
  "bevy-tnua",
  "bevy-tnua-avian3d",
  "bevy_enhanced_input",
+ "log",
  "mimalloc-redirect",
+ "tracing",
 ]
 
 [[package]]

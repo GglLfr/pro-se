@@ -1,6 +1,6 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, ops::Mul};
 
-use bevy::ecs::entity::EntityHashMap;
+use bevy::{ecs::entity::EntityHashMap, utils::Parallel};
 
 use crate::{
     environment::portal::{Portal, PortalLink},
@@ -9,7 +9,19 @@ use crate::{
 
 pub(super) fn plugin(app: &mut App) {
     app.register_required_components::<RigidBody, InPortal>()
-        .add_systems(Update, (portal_collision_notify, portal_collision_handle).chain());
+        .add_message::<Teleported>()
+        .add_systems(
+            Update,
+            (portal_collision_notify, portal_collision_cancel, portal_collision_handle).chain(),
+        );
+}
+
+#[derive(Reflect, Message, EntityEvent, Debug, Clone, Copy)]
+#[reflect(Debug, Clone)]
+pub struct Teleported {
+    #[entity_event]
+    pub entity: Entity,
+    pub map_transform: Affine3A,
 }
 
 #[derive(Component, Debug, Default)]
@@ -26,11 +38,14 @@ pub fn portal_collision_notify(
         match query.get_many_mut([start.collider1, start.collider2]) {
             Err(..) | Ok([(.., true), (.., true)]) | Ok([(.., false), (.., false)]) => continue,
             Ok([(portal, .., true), (entity, mut in_portal, false)]) | Ok([(entity, mut in_portal, false), (portal, .., true)]) => {
-                let Ok([(&entity_pos, &_entity_rot), (&portal_pos, &portal_rot)]) = transforms.get_many([entity, portal]) else { continue };
+                let Ok([(entity_pos, ..), (portal_pos, portal_rot)]) = transforms.get_many([entity, portal]) else { continue };
 
                 in_portal.entered.insert(
                     portal,
-                    match (*portal_pos - *entity_pos).dot(portal_rot.mul_vec3(Vec3::NEG_Z)).partial_cmp(&0.) {
+                    match (portal_pos.to_vec3a() - entity_pos.to_vec3a())
+                        .dot(portal_rot.mul_vec3a(Vec3A::NEG_Z))
+                        .partial_cmp(&0.)
+                    {
                         None | Some(Ordering::Equal) => continue,
                         Some(Ordering::Less) => false,
                         Some(Ordering::Greater) => true,
@@ -41,33 +56,88 @@ pub fn portal_collision_notify(
     }
 }
 
-pub fn portal_collision_handle(
-    mut in_portals: Query<(&mut InPortal, &mut Position, &mut LinearVelocity), Without<Portal>>,
-    portals: Query<(&Position, &Rotation, PortalLink), With<Portal>>,
+pub fn portal_collision_cancel(
+    mut collision_ends: MessageReader<CollisionEnd>,
+    mut query: Query<(Entity, &mut InPortal, Has<Portal>)>,
+    transforms: Query<(&Position, &Rotation)>,
 ) {
-    in_portals.par_iter_mut().for_each(|(mut in_portal, mut entity_pos, mut entity_vel)| {
-        in_portal.entered.retain(|&portal, &mut orientation| {
-            let Ok((&portal_pos, &portal_rot, other_portal)) = portals.get(portal) else { return false };
-            let Ok((&other_portal_pos, &other_portal_rot, ..)) = portals.get(other_portal.get()) else { return false };
-
-            if matches!(
-                (
-                    orientation,
-                    (*portal_pos - **entity_pos).dot(portal_rot.mul_vec3(Vec3::NEG_Z)).partial_cmp(&0.)
-                ),
-                (false, Some(Ordering::Greater)) | (true, Some(Ordering::Less))
-            ) {
-                let map = Affine3A::from_rotation_translation(*other_portal_rot, *other_portal_pos)
-                    * Affine3A::from_rotation_translation(*portal_rot, *portal_pos).inverse();
-
-                **entity_pos = map.transform_point3(**entity_pos);
-                **entity_vel = map.transform_vector3(**entity_vel);
-                false
-            } else {
-                true
+    for end in collision_ends.read() {
+        match query.get_many_mut([end.collider1, end.collider2]) {
+            Err(..) | Ok([(.., true), (.., true)]) | Ok([(.., false), (.., false)]) => continue,
+            Ok([(portal, .., true), (entity, mut in_portal, false)]) | Ok([(entity, mut in_portal, false), (portal, .., true)]) => {
+                if let Entry::Occupied(e) = in_portal.entered.entry(portal) {
+                    let Ok([(&entity_pos, &_entity_rot), (&portal_pos, &portal_rot)]) = transforms.get_many([entity, portal]) else { continue };
+                    if matches!(
+                        (
+                            e.get(),
+                            (portal_pos.to_vec3a() - entity_pos.to_vec3a())
+                                .dot(portal_rot.mul_vec3a(Vec3A::NEG_Z))
+                                .partial_cmp(&0.)
+                        ),
+                        (false, Some(Ordering::Less)) | (true, Some(Ordering::Greater))
+                    ) {
+                        e.remove();
+                    }
+                }
             }
-        });
-    });
+        }
+    }
+}
+
+pub fn portal_collision_handle(
+    mut commands: Commands,
+    mut teleported_writer: MessageWriter<Teleported>,
+    mut in_portals: Query<(Entity, &mut InPortal, &mut Transform, &mut Position, &mut Rotation, &mut LinearVelocity), Without<Portal>>,
+    portals: Query<(&Position, &Rotation, &GlobalTransform, PortalLink), With<Portal>>,
+    mut events: Local<Parallel<Vec<Teleported>>>,
+) {
+    in_portals.par_iter_mut().for_each_init(
+        || events.borrow_local_mut(),
+        |events, (entity, mut in_portal, mut entity_trns, mut entity_pos, mut entity_rot, mut entity_vel)| {
+            in_portal.entered.retain(|&portal, &mut orientation| {
+                let Ok((&portal_pos, &portal_rot, portal_scl, other_portal)) = portals.get(portal) else { return false };
+                let Ok((&other_portal_pos, &other_portal_rot, other_portal_scl, ..)) = portals.get(other_portal.get()) else { return false };
+
+                let portal_scl = portal_scl.scale();
+                let other_portal_scl = other_portal_scl.scale();
+
+                if matches!(
+                    (
+                        orientation,
+                        (portal_pos.to_vec3a() - entity_pos.to_vec3a())
+                            .dot(portal_rot.mul_vec3a(Vec3A::NEG_Z))
+                            .partial_cmp(&0.)
+                    ),
+                    (false, Some(Ordering::Greater)) | (true, Some(Ordering::Less))
+                ) {
+                    let map_transform = Affine3A::from_scale_rotation_translation(other_portal_scl, *other_portal_rot, *other_portal_pos)
+                        .mul(Affine3A::from_scale_rotation_translation(portal_scl, *portal_rot, *portal_pos).inverse());
+
+                    let entity_affine = map_transform * Affine3A::from_scale_rotation_translation(entity_trns.scale, **entity_rot, **entity_pos);
+                    let (scl, rot, pos) = entity_affine.to_scale_rotation_translation();
+
+                    **entity_pos = pos;
+                    **entity_rot = rot;
+                    entity_trns.scale = scl;
+                    **entity_vel = map_transform.transform_vector3a(entity_vel.to_vec3a()).to_vec3();
+
+                    events.push(Teleported { entity, map_transform });
+                    false
+                } else {
+                    true
+                }
+            });
+        },
+    );
+
+    let mut drain = vec![];
+    events.drain_into(&mut drain);
+
+    for &e in &drain {
+        commands.trigger(e);
+    }
+
+    teleported_writer.write_batch(drain);
 }
 
 #[derive(SystemParam)]
