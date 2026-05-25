@@ -44,6 +44,7 @@ pub mod prelude {
     pub use bevy_enhanced_input::prelude::{self::*, Cancel, Press, Release};
     pub use bevy_tnua::prelude::*;
     pub use bevy_tnua_avian3d::prelude::*;
+    pub use bevy_transform_interpolation::prelude::*;
     pub use mimalloc_redirect::MiMalloc;
 }
 
@@ -98,12 +99,16 @@ fn main() -> AppExit {
         ))
         .init_state::<GameState>()
         .add_systems(Startup, game_init)
-        .add_systems(Update, (move_around, lerp, apply_controls.in_set(TnuaUserControlsSystems)))
+        .add_systems(
+            Update,
+            (move_around, (lerp, move_camera).chain(), apply_controls.in_set(TnuaUserControlsSystems)),
+        )
         .add_observer(move_camera_on_portal)
         .run()
 }
 
-#[derive(Component)]
+#[derive(Component, Clone, Copy)]
+#[component(on_replace = lerp_on_replace)]
 struct Lerp {
     rot: [Quat; 2],
     scl: [Vec3; 2],
@@ -111,28 +116,26 @@ struct Lerp {
     started: f32,
 }
 
-fn move_camera_on_portal(
-    teleported: On<Teleported>,
-    mut commands: Commands,
-    time: Res<Time>,
-    camera: Single<(Entity, &mut Transform), With<PrimaryCamera>>,
+fn move_camera(
+    mut camera: Single<&mut Transform, (With<PrimaryCamera>, Without<PortalVisionViewer>)>,
+    viewer: Single<&Transform, With<PortalVisionViewer>>,
 ) {
-    let (camera_entity, mut camera) = camera.into_inner();
-    let (scale, rotation, translation) = (teleported.map_transform * camera.compute_affine()).to_scale_rotation_translation();
+    camera.rotation = viewer.rotation;
+    camera.translation = viewer.translation.with_z(camera.translation.z);
+    camera.scale = viewer.scale;
+}
 
-    commands.entity(camera_entity).insert(Lerp {
-        rot: [rotation, camera.rotation],
-        scl: [scale, camera.scale],
-        pos: Some([translation, camera.translation]),
-        started: time.elapsed_secs(),
-    });
+fn lerp_on_replace(mut world: DeferredWorld, HookContext { entity, .. }: HookContext) {
+    let &lerp = world.get::<Lerp>(entity).unwrap();
+    let mut transform = world.get_mut::<Transform>(entity).unwrap();
+    transform.rotation = lerp.rot[1];
+    transform.scale = lerp.scl[1];
+    if let Some(pos) = lerp.pos {
+        transform.translation = pos[1];
+    }
+}
 
-    *camera = Transform {
-        scale,
-        rotation,
-        translation,
-    };
-
+fn move_camera_on_portal(teleported: On<Teleported>, mut commands: Commands, time: Res<Time>) {
     let (scale, rotation, ..) = teleported.map_transform.to_scale_rotation_translation();
     commands.entity(teleported.entity).insert(Lerp {
         rot: [rotation, Quat::IDENTITY],
@@ -144,7 +147,7 @@ fn move_camera_on_portal(
 
 fn lerp(mut commands: Commands, time: Res<Time>, mut lerps: Query<(Entity, &mut Transform, &Lerp)>) {
     for (e, mut trns, lerp) in &mut lerps {
-        let t = ((time.elapsed_secs() - lerp.started) / 0.5).min(1.);
+        let t = ((time.elapsed_secs() - lerp.started) / 0.32).min(1.);
         let t = t * t * (3. - 2. * t);
 
         trns.rotation = lerp.rot[0].slerp(lerp.rot[1], t);
@@ -195,21 +198,21 @@ fn game_init(
 ) {
     next.set(GameState::InGame);
     let blocks = [
-        [1, 1, 1, 1, 1, 0, 3, 0, 0, 1, 1, 1, 1, 1, 1],
-        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1],
-        [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 1],
-        [1, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1],
-        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 4, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
-        [1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1],
-        [1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1],
+        [1, 0, 0, 0, 8, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1],
+        [1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1],
+        [1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [3, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 5, 0, 1],
         /*[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
         [2, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 5],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -251,17 +254,29 @@ fn game_init(
                 }
                 2 => {
                     portals[0] = trns
-                        .with_translation(trns.translation + vec3(0.5, 0.5, 0.))
                         .looking_to(Dir3::X, Dir3::Z)
-                        .with_scale(Vec3::splat(2.))
+                        .with_translation(trns.translation - Vec3::X * 0.5)
+                        .with_scale(Vec3::splat(3.))
                 }
                 3 => {
                     portals[1] = trns
-                        .with_translation(trns.translation + vec3(0.5, 0.5, 0.))
-                        .looking_to(Dir3::NEG_Y, Dir3::Z)
-                        .with_scale(Vec3::splat(4.))
+                        .looking_to(Dir3::X, Dir3::Z)
+                        .with_translation(trns.translation + Vec3::X * 0.5)
+                        .with_scale(Vec3::splat(3.))
                 }
-                4..=7 => {}
+                4 => {
+                    portals[2] = trns
+                        .looking_to(Dir3::NEG_Y, Dir3::Z)
+                        .with_translation(trns.translation - Vec3::Y * 0.5)
+                        .with_scale(Vec3::splat(3.))
+                }
+                5 => {
+                    portals[3] = trns
+                        .looking_to(Dir3::NEG_Y, Dir3::Z)
+                        .with_translation(trns.translation + Vec3::Y * 0.5)
+                        .with_scale(Vec3::splat(3.))
+                }
+                6..=7 => {}
                 //i @ 2..=5 => portals[i - 2] = trns.looking_to(Dir3::X, Dir3::Z),
                 //i @ 6..=7 => portals[i - 2] = trns.with_scale(vec3(16., 1., 1.)).looking_to(Dir3::Y, Dir3::Z),
                 8 => {
@@ -276,6 +291,7 @@ fn game_init(
                         TransformExtrapolation,
                         TransformHermiteEasing,
                         RigidBody::Dynamic,
+                        SweptCcd::default(),
                         Collider::capsule(0.4, 0.8),
                         TnuaController::<ControlScheme>::default(),
                         TnuaConfig::<ControlScheme>(control_scheme_configs.add(ControlSchemeConfig {
@@ -298,7 +314,10 @@ fn game_init(
     commands.spawn((PointLight::default(), Transform::from_xyz(0., 0., 4.)));
 
     let a = commands.spawn((portals[0], Portal::default())).id();
-    commands.spawn((portals[1], Portal::default(), PortalTo(a)));
+    commands.spawn((portals[2], Portal::default(), PortalTo(a)));
+
+    let b = commands.spawn((portals[1], Portal::default())).id();
+    commands.spawn((portals[3], Portal::default(), PortalTo(b)));
 
     /*portals[0].translation += vec3(-0.5, 1., 0.);
     portals[1].translation += vec3(-0.5, -1., 0.);

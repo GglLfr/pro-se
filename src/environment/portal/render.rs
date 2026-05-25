@@ -115,7 +115,8 @@ impl Material for PortalVisionMaterial {
     }
 
     fn alpha_mode(&self) -> AlphaMode {
-        AlphaMode::Blend
+        //TODO this should be Premultiplied
+        AlphaMode::Opaque
     }
 
     fn enable_prepass() -> bool {
@@ -164,18 +165,21 @@ pub fn build_portal_visions(
     mut visibility: Query<&mut Visibility>,
     vision_mesh: Res<PortalVisionMesh>,
     mut materials: ResMut<Assets<PortalVisionMaterial>>,
-    viewer: Option<Single<&GlobalTransform, With<PortalVisionViewer>>>,
+    viewer: Option<Single<&Position, With<PortalVisionViewer>>>,
     camera: Single<(&GlobalTransform, &Frustum), With<PrimaryCamera>>,
     portals: Query<(&GlobalTransform, &Aabb, &Portal, PortalLink)>,
     transforms: Query<&GlobalTransform>,
     spatial_query: SpatialQuery,
     limits: Res<PortalRenderLimits>,
-    mut buffers: Local<[Vec<(GlobalTransform, GlobalTransform, GlobalTransform, Portal, Entity, usize)>; 2]>,
+    mut buffers: Local<[Vec<(GlobalTransform, Vec3A, GlobalTransform, Portal, Entity, usize)>; 2]>,
 ) -> Result {
     use bevy::camera::primitives::Sphere;
 
     let (&camera_trns, frustum) = camera.into_inner();
-    let viewer_trns = viewer.map(Single::into_inner).copied().unwrap_or(camera_trns);
+    let viewer_pos = viewer
+        .map(Single::into_inner)
+        .map(|pos| pos.to_vec3a())
+        .unwrap_or(camera_trns.translation_vec3a());
 
     for (.., visible) in pool.map.values_mut() {
         *visible = false;
@@ -201,19 +205,19 @@ pub fn build_portal_visions(
             continue
         }
 
-        ping.push((camera_trns, viewer_trns, portal_trns, portal, link.get(), next_layer));
+        ping.push((camera_trns, viewer_pos, portal_trns, portal, link.get(), next_layer));
     }
 
     let mandatory = ping.len();
     let mut count = 0usize;
 
     'breadth: for depth in 0..limits.max_depth {
-        for (camera_trns, viewer_trns, portal_trns, portal, other_portal, layer) in ping.drain(..) {
+        for (camera_trns, viewer_pos, portal_trns, portal, other_portal, layer) in ping.drain(..) {
             next_layer += 1;
             create_portal_vision(
                 &mut commands,
                 camera_trns,
-                viewer_trns,
+                viewer_pos,
                 portal_trns,
                 portal,
                 other_portal,
@@ -259,7 +263,7 @@ pub fn build_portal_visions(
 fn create_portal_vision(
     commands: &mut Commands,
     camera_trns: GlobalTransform,
-    viewer_trns: GlobalTransform,
+    viewer_pos: Vec3A,
     portal_trns: GlobalTransform,
     portal: Portal,
     other_portal: Entity,
@@ -274,13 +278,13 @@ fn create_portal_vision(
     layer: usize,
     next_layer: usize,
     depth: usize,
-    subsequents: &mut Vec<(GlobalTransform, GlobalTransform, GlobalTransform, Portal, Entity, usize)>,
+    subsequents: &mut Vec<(GlobalTransform, Vec3A, GlobalTransform, Portal, Entity, usize)>,
 ) -> Result {
     let Ok(&other_portal_trns) = transforms.get(other_portal) else { return Ok(()) };
     let map_transform = other_portal_trns * portal_trns.inverse();
 
     let portal_affine = portal_trns.affine();
-    let viewer_to_portal = portal_affine.translation - viewer_trns.translation_vec3a();
+    let viewer_to_portal = portal_affine.translation - viewer_pos;
     let orientation = viewer_to_portal.dot(portal_trns.forward().to_vec3a()).signum();
 
     let vision_bounds = (portal_affine.to_scale_rotation_translation().0.xy() + 2. * portal.vision_length).extend(portal.vision_length);
@@ -295,7 +299,7 @@ fn create_portal_vision(
 
     let other_camera_trns = map_transform.mul(&camera_trns);
     let other_camera_local_trns = Transform::from(other_camera_trns);
-    let portal_vision_clip = HalfSpace::through_square(viewer_trns.translation_vec3a(), portal_affine);
+    let portal_vision_clip = HalfSpace::through_square(viewer_pos, portal_affine);
 
     camera_pool.obtain(commands, camera_pool_query, |commands, data| {
         data.camera.order = -(depth as isize + 1);
@@ -377,7 +381,7 @@ fn create_portal_vision(
             {
                 subsequents.push((
                     other_camera_trns,
-                    map_transform.mul(&viewer_trns),
+                    map_transform.affine().transform_point3a(viewer_pos),
                     next_portal_trns,
                     next_portal,
                     next_link.get(),

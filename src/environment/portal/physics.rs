@@ -1,6 +1,11 @@
 use std::{cmp::Ordering, ops::Mul};
 
-use bevy::{ecs::entity::EntityHashMap, utils::Parallel};
+use avian3d::physics_transform::PhysicsTransformSystems;
+use bevy::{
+    ecs::entity::{EntityHashMap, EntityHashSet},
+    utils::Parallel,
+};
+use bevy_transform_interpolation::{RotationEasingState, ScaleEasingState, TranslationEasingState};
 
 use crate::{
     environment::portal::{Portal, PortalLink},
@@ -11,8 +16,11 @@ pub(super) fn plugin(app: &mut App) {
     app.register_required_components::<RigidBody, InPortal>()
         .add_message::<Teleported>()
         .add_systems(
-            Update,
-            (portal_collision_notify, portal_collision_cancel, portal_collision_handle).chain(),
+            FixedPostUpdate,
+            (portal_collision_notify, portal_collision_cancel, portal_collision_handle)
+                .chain()
+                .in_set(PhysicsSystems::Writeback)
+                .before(PhysicsTransformSystems::PositionToTransform),
         );
 }
 
@@ -87,16 +95,37 @@ pub fn portal_collision_cancel(
 pub fn portal_collision_handle(
     mut commands: Commands,
     mut teleported_writer: MessageWriter<Teleported>,
-    mut in_portals: Query<(Entity, &mut InPortal, &mut Transform, &mut Position, &mut Rotation, &mut LinearVelocity), Without<Portal>>,
+    mut in_portals: Query<
+        (
+            Entity,
+            &mut InPortal,
+            &mut Transform,
+            &mut Position,
+            &mut Rotation,
+            &mut LinearVelocity,
+            Option<&mut TranslationEasingState>,
+            Option<&mut RotationEasingState>,
+            Option<&mut ScaleEasingState>,
+        ),
+        Without<Portal>,
+    >,
     portals: Query<(&Position, &Rotation, &GlobalTransform, PortalLink), With<Portal>>,
     mut events: Local<Parallel<Vec<Teleported>>>,
 ) {
     in_portals.par_iter_mut().for_each_init(
         || events.borrow_local_mut(),
-        |events, (entity, mut in_portal, mut entity_trns, mut entity_pos, mut entity_rot, mut entity_vel)| {
-            in_portal.entered.retain(|&portal, &mut orientation| {
-                let Ok((&portal_pos, &portal_rot, portal_scl, other_portal)) = portals.get(portal) else { return false };
-                let Ok((&other_portal_pos, &other_portal_rot, other_portal_scl, ..)) = portals.get(other_portal.get()) else { return false };
+        |events, (entity, mut in_portal, mut entity_trns, mut entity_pos, mut entity_rot, mut entity_vel, translation_state, rotation_state, scale_state)| {
+            let mut to_remove = EntityHashSet::new();
+            for (&portal, &orientation) in &in_portal.entered {
+                let Ok((&portal_pos, &portal_rot, portal_scl, other_portal)) = portals.get(portal) else {
+                    to_remove.insert(portal);
+                    continue
+                };
+
+                let Ok((&other_portal_pos, &other_portal_rot, other_portal_scl, ..)) = portals.get(other_portal.get()) else {
+                    to_remove.insert(portal);
+                    continue
+                };
 
                 let portal_scl = portal_scl.scale();
                 let other_portal_scl = other_portal_scl.scale();
@@ -121,12 +150,29 @@ pub fn portal_collision_handle(
                     entity_trns.scale = scl;
                     **entity_vel = map_transform.transform_vector3a(entity_vel.to_vec3a()).to_vec3();
 
+                    if let Some(mut state) = translation_state {
+                        state.start = None;
+                        state.end = None;
+                    }
+
+                    if let Some(mut state) = rotation_state {
+                        state.start = None;
+                        state.end = None;
+                    }
+
+                    if let Some(mut state) = scale_state {
+                        state.start = None;
+                        state.end = None;
+                    }
+
                     events.push(Teleported { entity, map_transform });
-                    false
-                } else {
-                    true
+                    in_portal.entered.clear();
+
+                    return
                 }
-            });
+            }
+
+            in_portal.entered.retain(|e, _| !to_remove.contains(e));
         },
     );
 
