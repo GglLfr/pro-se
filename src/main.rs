@@ -1,5 +1,5 @@
 pub mod prelude {
-    pub use std::{f32::consts::PI, ptr::addr_eq};
+    pub use std::{f32::consts::PI, mem::replace, ptr::addr_eq};
 
     pub use avian3d::prelude::*;
     pub use bevy::{
@@ -14,7 +14,7 @@ pub mod prelude {
             lifecycle::HookContext,
             query::{QueryData, QueryItem, ROQueryItem},
             system::{
-                ReadOnlySystemParam, SystemParamItem,
+                ReadOnlySystemParam, SystemParam, SystemParamItem,
                 lifetimeless::{Read, Write},
             },
             world::DeferredWorld,
@@ -49,11 +49,11 @@ pub mod prelude {
 
 use bevy_tnua::builtins::{TnuaBuiltinJumpConfig, TnuaBuiltinWalkConfig};
 use bevy_tnua_avian3d::TnuaAvian3dPlugin;
-use prelude::*;
 
 use crate::{
     camera::ClipMaterial,
-    environment::portal::{Portal, PortalTo, PortalVisionViewer},
+    environment::portal::{Portal, PortalCollisionHooks, PortalTo, PortalVisionViewer},
+    prelude::*,
 };
 
 pub mod camera;
@@ -89,7 +89,7 @@ fn main() -> AppExit {
                 ..default()
             }),
             report_mimalloc_version,
-            PhysicsPlugins::default(),
+            PhysicsPlugins::default().with_collision_hooks::<PortalCollisionHooks>(),
             //PhysicsDebugPlugin,
             TnuaControllerPlugin::<ControlScheme>::new(FixedUpdate),
             TnuaAvian3dPlugin::new(FixedUpdate),
@@ -216,6 +216,8 @@ fn game_init(
                         MeshMaterial3d(material.clone()),
                         PortalVisionViewer,
                         trns,
+                        TransformExtrapolation,
+                        TransformHermiteEasing,
                         RigidBody::Dynamic,
                         Collider::capsule(0.4, 0.8),
                         TnuaController::<ControlScheme>::default(),

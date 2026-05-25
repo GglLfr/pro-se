@@ -375,7 +375,14 @@ fn create_portal_vision(
             if e != other_portal
                 && let Ok((&next_portal_trns, _, &next_portal, next_link)) = portals.get(e)
             {
-                subsequents.push((other_camera_trns, viewer_trns, next_portal_trns, next_portal, next_link.get(), next_layer));
+                subsequents.push((
+                    other_camera_trns,
+                    map_transform.mul(&viewer_trns),
+                    next_portal_trns,
+                    next_portal,
+                    next_link.get(),
+                    next_layer,
+                ));
             }
             true
         },

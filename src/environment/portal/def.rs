@@ -9,8 +9,10 @@ pub(super) fn plugin(app: &mut App) {
 #[require(
     Transform,
     Aabb::from_min_max(vec3(-0.5, -0.5, 0.), vec3(0.5, 0.5, 0.)),
+    RigidBody::Kinematic,
     Collider::cuboid(1., 1., 0.),
     Sensor,
+    CollisionEventsEnabled,
 )]
 pub struct Portal {
     pub vision_length: f32,
@@ -54,6 +56,7 @@ impl PortalFrom {
 }
 
 #[derive(QueryData)]
+#[query_data(derive(Debug))]
 pub struct PortalLink(AnyOf<(&'static PortalTo, &'static PortalFrom)>);
 impl PortalLinkItem<'_, '_> {
     pub fn get(&self) -> Entity {

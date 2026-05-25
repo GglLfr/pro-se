@@ -95,7 +95,7 @@ pub fn update_primary_camera(
 
     for (_, _, trns, mut frustum, camera, _, projection) in &mut cameras {
         let Some(size) = camera.physical_target_size() else { return Ok(()) };
-        if std::mem::replace(&mut *last_size, size) != size {
+        if replace(&mut *last_size, size) != size {
             pool.needs_resize = true;
         }
 
@@ -148,11 +148,11 @@ pub fn update_pooled_dirty_images(
     let Some(size) = camera.physical_target_size() else { return Ok(()) };
 
     let pool = pool.into_inner();
-    if std::mem::replace(&mut pool.needs_resize, false) {
+    if replace(&mut pool.needs_resize, false) {
         pool.dirty_image = 0;
     }
 
-    for handle in &pool.images[std::mem::replace(&mut pool.dirty_image, pool.images.len())..] {
+    for handle in &pool.images[replace(&mut pool.dirty_image, pool.images.len())..] {
         let new = Image {
             asset_usage: RenderAssetUsages::RENDER_WORLD,
             ..Image::new_target_texture(
