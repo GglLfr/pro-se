@@ -42,45 +42,32 @@ pub fn portal_collision_notify(
 }
 
 pub fn portal_collision_handle(
-    mut commands: Commands,
-    mut collision_ends: MessageReader<CollisionEnd>,
-    mut query: Query<(Entity, &mut InPortal, Option<PortalLink>)>,
-    transforms: Query<(&Position, &Rotation)>,
+    mut in_portals: Query<(&mut InPortal, &mut Position, &mut LinearVelocity), Without<Portal>>,
+    portals: Query<(&Position, &Rotation, PortalLink), With<Portal>>,
 ) {
-    for end in collision_ends.read() {
-        match query.get_many_mut([end.collider1, end.collider2]) {
-            Err(..) | Ok([(.., Some(..)), (.., Some(..))]) | Ok([(.., None), (.., None)]) => continue,
-            Ok([(portal, .., Some(other_portal)), (entity, mut in_portal, None)])
-            | Ok([(entity, mut in_portal, None), (portal, .., Some(other_portal))]) => {
-                let Some(orientation) = in_portal.entered.remove(&portal) else { continue };
-                let Ok(
-                    [
-                        (&entity_pos, &_entity_rot),
-                        (&portal_pos, &portal_rot),
-                        (&other_portal_pos, &other_portal_rot),
-                    ],
-                ) = transforms.get_many([entity, portal, other_portal.get()])
-                else {
-                    continue
-                };
+    in_portals.par_iter_mut().for_each(|(mut in_portal, mut entity_pos, mut entity_vel)| {
+        in_portal.entered.retain(|&portal, &mut orientation| {
+            let Ok((&portal_pos, &portal_rot, other_portal)) = portals.get(portal) else { return false };
+            let Ok((&other_portal_pos, &other_portal_rot, ..)) = portals.get(other_portal.get()) else { return false };
 
-                if matches!(
-                    (
-                        orientation,
-                        (*portal_pos - *entity_pos).dot(portal_rot.mul_vec3(Vec3::NEG_Z)).partial_cmp(&0.)
-                    ),
-                    (false, Some(Ordering::Greater)) | (true, Some(Ordering::Less))
-                ) {
-                    commands.entity(entity).insert(Position(
-                        (Affine3A::from_rotation_translation(*other_portal_rot, *other_portal_pos)
-                            * Affine3A::from_rotation_translation(*portal_rot, *portal_pos).inverse())
-                        .transform_point3a(entity_pos.to_vec3a())
-                        .into(),
-                    ));
-                }
+            if matches!(
+                (
+                    orientation,
+                    (*portal_pos - **entity_pos).dot(portal_rot.mul_vec3(Vec3::NEG_Z)).partial_cmp(&0.)
+                ),
+                (false, Some(Ordering::Greater)) | (true, Some(Ordering::Less))
+            ) {
+                let map = Affine3A::from_rotation_translation(*other_portal_rot, *other_portal_pos)
+                    * Affine3A::from_rotation_translation(*portal_rot, *portal_pos).inverse();
+
+                **entity_pos = map.transform_point3(**entity_pos);
+                **entity_vel = map.transform_vector3(**entity_vel);
+                false
+            } else {
+                true
             }
-        }
-    }
+        });
+    });
 }
 
 #[derive(SystemParam)]
