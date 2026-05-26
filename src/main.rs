@@ -126,21 +126,18 @@ struct Lerp {
 
 fn move_camera(
     camera: Single<(&mut Transform, Option<&mut Lerp>), (With<PrimaryCamera>, Without<PortalVisionViewer>)>,
-    viewer: Single<(&Transform, &LinearVelocity), With<PortalVisionViewer>>,
+    viewer: Single<&Transform, With<PortalVisionViewer>>,
 ) {
-    let (viewer, vel) = viewer.into_inner();
-    info!("{} {}", viewer.translation.z, vel.z);
     let (mut trns, lerp) = camera.into_inner();
     if let Some(mut lerp) = lerp {
-        lerp.rot[1] = viewer.rotation;
-        lerp.scl[1] = viewer.scale;
         if let Some(pos) = &mut lerp.pos {
+            pos[0] = viewer.translation.with_z(pos[0].z);
             pos[1] = viewer.translation.with_z(DEFAULT_CAMERA_DISTANCE);
         }
     } else {
         trns.rotation = viewer.rotation;
-        trns.translation = viewer.translation.with_z(DEFAULT_CAMERA_DISTANCE);
         trns.scale = viewer.scale;
+        trns.translation = viewer.translation.with_z(DEFAULT_CAMERA_DISTANCE);
     }
 }
 
