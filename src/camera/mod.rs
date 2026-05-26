@@ -18,10 +18,12 @@ pub(super) fn plugin(app: &mut App) {
         .add_systems(Startup, spawn_camera);
 }
 
+pub const DEFAULT_CAMERA_DISTANCE: f32 = 30.;
+
 pub fn spawn_camera(mut commands: Commands) {
     commands.spawn((
         PrimaryCamera,
         RenderLayers::from_iter([0, LAYER_PORTAL_RESERVE]),
-        Transform::from_xyz(0., 0., 30.).looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::from_xyz(0., 0., DEFAULT_CAMERA_DISTANCE).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 }

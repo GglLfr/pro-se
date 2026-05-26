@@ -9,6 +9,7 @@ use bevy_transform_interpolation::{RotationEasingState, ScaleEasingState, Transl
 
 use crate::{
     environment::portal::{Portal, PortalLink},
+    math::AffineExt as _,
     prelude::*,
 };
 
@@ -17,7 +18,7 @@ pub(super) fn plugin(app: &mut App) {
         .add_message::<Teleported>()
         .add_systems(
             FixedPostUpdate,
-            (portal_collision_notify, portal_collision_cancel, portal_collision_handle)
+            (portal_collision_notify, portal_collision_handle, portal_collision_cancel)
                 .chain()
                 .in_set(PhysicsSystems::Writeback)
                 .before(PhysicsTransformSystems::PositionToTransform),
@@ -46,10 +47,10 @@ pub fn portal_collision_notify(
         match query.get_many_mut([start.collider1, start.collider2]) {
             Err(..) | Ok([(.., true), (.., true)]) | Ok([(.., false), (.., false)]) => continue,
             Ok([(portal, .., true), (entity, mut in_portal, false)]) | Ok([(entity, mut in_portal, false), (portal, .., true)]) => {
+                let Entry::Vacant(e) = in_portal.entered.entry(portal) else { continue };
                 let Ok([(entity_pos, ..), (portal_pos, portal_rot)]) = transforms.get_many([entity, portal]) else { continue };
 
-                in_portal.entered.insert(
-                    portal,
+                e.insert(
                     match (portal_pos.to_vec3a() - entity_pos.to_vec3a())
                         .dot(portal_rot.mul_vec3a(Vec3A::NEG_Z))
                         .partial_cmp(&0.)
@@ -64,29 +65,12 @@ pub fn portal_collision_notify(
     }
 }
 
-pub fn portal_collision_cancel(
-    mut collision_ends: MessageReader<CollisionEnd>,
-    mut query: Query<(Entity, &mut InPortal, Has<Portal>)>,
-    transforms: Query<(&Position, &Rotation)>,
-) {
+pub fn portal_collision_cancel(mut collision_ends: MessageReader<CollisionEnd>, mut query: Query<(Entity, &mut InPortal, Has<Portal>)>) {
     for end in collision_ends.read() {
         match query.get_many_mut([end.collider1, end.collider2]) {
             Err(..) | Ok([(.., true), (.., true)]) | Ok([(.., false), (.., false)]) => continue,
-            Ok([(portal, .., true), (entity, mut in_portal, false)]) | Ok([(entity, mut in_portal, false), (portal, .., true)]) => {
-                if let Entry::Occupied(e) = in_portal.entered.entry(portal) {
-                    let Ok([(&entity_pos, &_entity_rot), (&portal_pos, &portal_rot)]) = transforms.get_many([entity, portal]) else { continue };
-                    if matches!(
-                        (
-                            e.get(),
-                            (portal_pos.to_vec3a() - entity_pos.to_vec3a())
-                                .dot(portal_rot.mul_vec3a(Vec3A::NEG_Z))
-                                .partial_cmp(&0.)
-                        ),
-                        (false, Some(Ordering::Less)) | (true, Some(Ordering::Greater))
-                    ) {
-                        e.remove();
-                    }
-                }
+            Ok([(portal, .., true), (.., mut in_portal, false)]) | Ok([(.., mut in_portal, false), (portal, .., true)]) => {
+                in_portal.entered.remove(&portal);
             }
         }
     }
@@ -140,9 +124,12 @@ pub fn portal_collision_handle(
                     (false, Some(Ordering::Greater)) | (true, Some(Ordering::Less))
                 ) {
                     let map_transform = Affine3A::from_scale_rotation_translation(other_portal_scl, *other_portal_rot, *other_portal_pos)
-                        .mul(Affine3A::from_scale_rotation_translation(portal_scl, *portal_rot, *portal_pos).inverse());
+                        .mul(Affine3A::from_scale_rotation_translation(portal_scl, *portal_rot, *portal_pos).inverse())
+                        .cleanup_z();
 
-                    let entity_affine = map_transform * Affine3A::from_scale_rotation_translation(entity_trns.scale, **entity_rot, **entity_pos);
+                    let entity_affine = map_transform * Affine3A::from_scale_rotation_translation(entity_trns.scale, **entity_rot, **entity_pos)
+                        .cleanup_z();
+
                     let (scl, rot, pos) = entity_affine.to_scale_rotation_translation();
 
                     **entity_pos = pos;
@@ -167,6 +154,7 @@ pub fn portal_collision_handle(
 
                     events.push(Teleported { entity, map_transform });
                     in_portal.entered.clear();
+                    in_portal.entered.insert(other_portal.get(), !orientation);
 
                     return
                 }
