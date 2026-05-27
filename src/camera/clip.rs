@@ -152,7 +152,7 @@ impl CameraProjection for ClipProjection {
 #[bindless(index_table(range(50..51), binding(100)))]
 pub struct Clip {}
 impl Clip {
-    pub fn from(material: impl Into<StandardMaterial>) -> ExtendedMaterial<StandardMaterial, Self> {
+    pub fn from(material: impl Into<StandardMaterial>) -> ClipMaterial {
         ExtendedMaterial {
             base: material.into(),
             extension: Self {},

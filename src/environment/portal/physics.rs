@@ -5,8 +5,8 @@ use crate::{
 };
 
 pub(super) fn plugin(app: &mut App) {
-    app.register_required_components::<RigidBody, InPortal>()
-        .add_message::<Teleported>()
+    app.register_required_components::<RigidBody, PortalConnections>()
+        .add_message::<PortalTeleport>()
         .add_systems(
             FixedPostUpdate,
             (portal_collision_notify, portal_collision_handle, portal_collision_cancel)
@@ -18,27 +18,28 @@ pub(super) fn plugin(app: &mut App) {
 
 #[derive(Reflect, Message, EntityEvent, Debug, Clone, Copy)]
 #[reflect(Debug, Clone)]
-pub struct Teleported {
+pub struct PortalTeleport {
     #[entity_event]
     pub entity: Entity,
     pub map_transform: Affine3A,
 }
 
-#[derive(Component, Debug, Default)]
-pub struct InPortal {
-    pub entered: EntityHashMap<bool>,
+#[derive(Component, Debug, Default, Deref, DerefMut)]
+pub struct PortalConnections {
+    pub intersecting: EntityHashMap<bool>,
 }
 
+//TODO fix entities phasing through portal sensors when it's fast enough
 pub fn portal_collision_notify(
     mut collision_starts: MessageReader<CollisionStart>,
-    mut query: Query<(Entity, &mut InPortal, Has<Portal>)>,
+    mut query: Query<(Entity, &mut PortalConnections, Has<Portal>)>,
     transforms: Query<(&Position, &Rotation)>,
 ) {
     for start in collision_starts.read() {
         match query.get_many_mut([start.collider1, start.collider2]) {
             Err(..) | Ok([(.., true), (.., true)]) | Ok([(.., false), (.., false)]) => continue,
             Ok([(portal, .., true), (entity, mut in_portal, false)]) | Ok([(entity, mut in_portal, false), (portal, .., true)]) => {
-                let Entry::Vacant(e) = in_portal.entered.entry(portal) else { continue };
+                let Entry::Vacant(e) = in_portal.entry(portal) else { continue };
                 let Ok([(entity_pos, ..), (portal_pos, portal_rot)]) = transforms.get_many([entity, portal]) else { continue };
 
                 e.insert(
@@ -56,12 +57,12 @@ pub fn portal_collision_notify(
     }
 }
 
-pub fn portal_collision_cancel(mut collision_ends: MessageReader<CollisionEnd>, mut query: Query<(Entity, &mut InPortal, Has<Portal>)>) {
+pub fn portal_collision_cancel(mut collision_ends: MessageReader<CollisionEnd>, mut query: Query<(Entity, &mut PortalConnections, Has<Portal>)>) {
     for end in collision_ends.read() {
         match query.get_many_mut([end.collider1, end.collider2]) {
             Err(..) | Ok([(.., true), (.., true)]) | Ok([(.., false), (.., false)]) => continue,
             Ok([(portal, .., true), (.., mut in_portal, false)]) | Ok([(.., mut in_portal, false), (portal, .., true)]) => {
-                in_portal.entered.remove(&portal);
+                in_portal.remove(&portal);
             }
         }
     }
@@ -69,11 +70,11 @@ pub fn portal_collision_cancel(mut collision_ends: MessageReader<CollisionEnd>, 
 
 pub fn portal_collision_handle(
     mut commands: Commands,
-    mut teleported_writer: MessageWriter<Teleported>,
+    mut teleported_writer: MessageWriter<PortalTeleport>,
     mut in_portals: Query<
         (
             Entity,
-            &mut InPortal,
+            &mut PortalConnections,
             &mut Transform,
             &mut Position,
             &mut Rotation,
@@ -85,7 +86,7 @@ pub fn portal_collision_handle(
         Without<Portal>,
     >,
     portals: Query<(&Position, &Rotation, &GlobalTransform, PortalLink), With<Portal>>,
-    mut events: Local<Parallel<Vec<Teleported>>>,
+    mut events: Local<Parallel<Vec<PortalTeleport>>>,
 ) {
     in_portals.par_iter_mut().for_each_init(
         || events.borrow_local_mut(),
@@ -93,7 +94,7 @@ pub fn portal_collision_handle(
             // `rustfmt` seems to choke if this was destructured in the lmabda arguments directly.
             let (
                 entity,
-                mut in_portal,
+                mut connections,
                 mut entity_trns,
                 mut entity_pos,
                 mut entity_rot,
@@ -104,7 +105,7 @@ pub fn portal_collision_handle(
             ) = data;
 
             let mut to_remove = EntityHashSet::new();
-            for (&portal, &orientation) in &in_portal.entered {
+            for (&portal, &orientation) in &**connections {
                 let Ok((&portal_pos, &portal_rot, portal_scl, other_portal)) = portals.get(portal) else {
                     to_remove.insert(portal);
                     continue
@@ -156,14 +157,14 @@ pub fn portal_collision_handle(
                         state.end = None;
                     }
 
-                    events.push(Teleported { entity, map_transform });
-                    in_portal.entered.clear();
-                    in_portal.entered.insert(other_portal.get(), !orientation);
+                    events.push(PortalTeleport { entity, map_transform });
+                    connections.clear();
+                    connections.insert(other_portal.get(), !orientation);
                     return
                 }
             }
 
-            in_portal.entered.retain(|e, _| !to_remove.contains(e));
+            connections.retain(|e, _| !to_remove.contains(e));
         },
     );
 
