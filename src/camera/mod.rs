@@ -10,11 +10,7 @@ pub use pool::*;
 pub(super) fn plugin(app: &mut App) {
     app.add_plugins((clip::plugin, pool::plugin))
         .insert_resource(ClearColor(Color::NONE))
-        .insert_resource(GlobalAmbientLight {
-            color: Color::WHITE,
-            brightness: 0.4,
-            affects_lightmapped_meshes: true,
-        })
+        .insert_resource(GlobalAmbientLight::NONE)
         .add_systems(Startup, spawn_camera);
 }
 

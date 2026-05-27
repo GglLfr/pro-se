@@ -48,8 +48,8 @@ pub trait GlobalTransformExt {
         GlobalTransform::from(self.as_transform().affine().inverse())
     }
 
-    fn mul(&self, other: &GlobalTransform) -> GlobalTransform {
-        GlobalTransform::from(self.as_transform().affine() * other.affine())
+    fn cleanup_z(&self) -> GlobalTransform {
+        GlobalTransform::from(self.as_transform().affine().cleanup_z())
     }
 }
 

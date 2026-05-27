@@ -281,7 +281,7 @@ fn create_portal_vision(
     subsequents: &mut Vec<(GlobalTransform, Vec3A, GlobalTransform, Portal, Entity, usize)>,
 ) -> Result {
     let Ok(&other_portal_trns) = transforms.get(other_portal) else { return Ok(()) };
-    let map_transform = other_portal_trns * portal_trns.inverse();
+    let map_transform = (other_portal_trns * portal_trns.inverse()).cleanup_z();
 
     let portal_affine = portal_trns.affine();
     let viewer_to_portal = portal_affine.translation - viewer_pos;
@@ -297,7 +297,7 @@ fn create_portal_vision(
     let vision_global_trns = GlobalTransform::from(vision_trns);
     let vision_layer = LAYER_PORTAL_RESERVE + layer;
 
-    let other_camera_trns = map_transform.mul(&camera_trns);
+    let other_camera_trns = map_transform * camera_trns;
     let other_camera_local_trns = Transform::from(other_camera_trns);
     let portal_vision_clip = HalfSpace::through_square(viewer_pos, portal_affine);
 
@@ -310,7 +310,7 @@ fn create_portal_vision(
             )),
             //TODO user-defined half-space
             frustum: ClipFrustum::Custom(Frustum::cuboid(
-                map_transform.mul(&vision_global_trns).affine(),
+                (map_transform * vision_global_trns).affine(),
                 vec3a(-0.5, -0.5, 0.),
                 vec3a(0.5, 0.5, -1.),
             )),

@@ -1,3 +1,5 @@
+use bevy::{ecs::system::lifetimeless::SRes, render::render_resource::BufferDescriptor};
+
 use crate::prelude::*;
 
 pub type ClipMaterial = ExtendedMaterial<StandardMaterial, Clip>;
@@ -9,7 +11,7 @@ pub(super) fn plugin(app: &mut App) {
 
     if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
         render_app
-            .add_systems(RenderStartup, init_clip_planes)
+            .add_systems(RenderStartup, (init_clip_planes, init_view_clip_bind_group_layout))
             .add_systems(ExtractSchedule, extract_clip_plane)
             .add_systems(
                 Render,
@@ -149,6 +151,15 @@ impl CameraProjection for ClipProjection {
 #[reflect(Debug, Default, Clone)]
 #[bindless(index_table(range(50..51), binding(100)))]
 pub struct Clip {}
+impl Clip {
+    pub fn from(material: impl Into<StandardMaterial>) -> ExtendedMaterial<StandardMaterial, Self> {
+        ExtendedMaterial {
+            base: material.into(),
+            extension: Self {},
+        }
+    }
+}
+
 impl MaterialExtension for Clip {
     fn vertex_shader() -> ShaderRef {
         ShaderRef::Path("shaders/clip.wgsl".into())
@@ -244,6 +255,35 @@ pub fn prepare_clip_planes(mut planes: ResMut<ViewClipPlanes>, device: Res<Rende
     planes.buffer.write_buffer(&device, &queue);
 }
 
+#[derive(Resource)]
+pub struct ViewClipBindGroupLayout {
+    pub empty_bind_group: BindGroup,
+    pub bind_group_layout: BindGroupLayoutDescriptor,
+}
+
+fn init_view_clip_bind_group_layout(mut commands: Commands, device: Res<RenderDevice>, cache: Res<PipelineCache>) {
+    let bind_group_layout = BindGroupLayoutDescriptor::new("clip_bind_group", &[
+        uniform_buffer::<ViewClipPlane>(true).build(0, ShaderStages::VERTEX_FRAGMENT)
+    ]);
+
+    commands.insert_resource(ViewClipBindGroupLayout {
+        empty_bind_group: device.create_bind_group("view_clip_plane_empty_bind_group", &cache.get_bind_group_layout(&bind_group_layout), &[
+            BindGroupEntry {
+                binding: 0,
+                resource: device
+                    .create_buffer(&BufferDescriptor {
+                        label: None,
+                        size: (size_of::<ViewClipPlane>() as u64).next_multiple_of(16),
+                        usage: BufferUsages::UNIFORM,
+                        mapped_at_creation: false,
+                    })
+                    .as_entire_binding(),
+            },
+        ]),
+        bind_group_layout,
+    });
+}
+
 #[derive(Component)]
 pub struct ViewClipBindGroup {
     pub bind_group: BindGroup,
@@ -251,6 +291,7 @@ pub struct ViewClipBindGroup {
 
 pub fn prepare_clip_bind_groups(
     mut commands: Commands,
+    layout: Res<ViewClipBindGroupLayout>,
     planes: Res<ViewClipPlanes>,
     device: Res<RenderDevice>,
     cache: Res<PipelineCache>,
@@ -259,36 +300,35 @@ pub fn prepare_clip_bind_groups(
     let Some(resource) = planes.buffer.binding() else { return };
     for (e,) in &views {
         commands.entity(e).insert(ViewClipBindGroup {
-            bind_group: device.create_bind_group(
-                "view_clip_plane_bind_group",
-                &cache.get_bind_group_layout(&BindGroupLayoutDescriptor::new("clip_bind_group", &[uniform_buffer::<ViewClipPlane>(
-                    true,
-                )
-                .build(0, ShaderStages::VERTEX_FRAGMENT)])),
-                &[BindGroupEntry {
+            bind_group: device.create_bind_group("view_clip_plane_bind_group", &cache.get_bind_group_layout(&layout.bind_group_layout), &[
+                BindGroupEntry {
                     binding: 0,
                     resource: resource.clone(),
-                }],
-            ),
+                },
+            ]),
         });
     }
 }
 
 pub struct SetClipPlaneBindGroup<const I: usize>;
 impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetClipPlaneBindGroup<I> {
-    type Param = ();
-    type ViewQuery = (Read<ViewClipPlaneOffset>, Read<ViewClipBindGroup>);
+    type Param = SRes<ViewClipBindGroupLayout>;
+    type ViewQuery = Option<(Read<ViewClipPlaneOffset>, Read<ViewClipBindGroup>)>;
     type ItemQuery = ();
 
     #[inline]
     fn render<'w>(
         _item: &P,
-        (offset, bind_group): ROQueryItem<'w, '_, Self::ViewQuery>,
+        view: ROQueryItem<'w, '_, Self::ViewQuery>,
         _entity: Option<()>,
-        _: SystemParamItem<'w, '_, Self::Param>,
+        layout: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
-        pass.set_bind_group(I, &bind_group.bind_group, &[offset.offset]);
+        let layout = layout.into_inner();
+        match view {
+            Some((offset, bind_group)) => pass.set_bind_group(I, &bind_group.bind_group, &[offset.offset]),
+            None => pass.set_bind_group(I, &layout.empty_bind_group, &[0]),
+        }
         RenderCommandResult::Success
     }
 }

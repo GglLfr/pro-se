@@ -29,10 +29,10 @@ pub trait HalfSpaceExt {
         let y = at.matrix3.y_axis * Vec3A::splat(0.5);
 
         Some([
-            Self::from_points_facing(from, center - x, center - y, center)?,
-            Self::from_points_facing(from, center + x, center - y, center)?,
-            Self::from_points_facing(from, center + x, center + y, center)?,
-            Self::from_points_facing(from, center - x, center + y, center)?,
+            Self::from_points_facing(from, center - x - y, center + x - y, center)?,
+            Self::from_points_facing(from, center + x - y, center + x + y, center)?,
+            Self::from_points_facing(from, center + x + y, center - x + y, center)?,
+            Self::from_points_facing(from, center - x + y, center - x - y, center)?,
         ])
     }
 }

@@ -1,12 +1,3 @@
-use std::{cmp::Ordering, ops::Mul};
-
-use avian3d::physics_transform::PhysicsTransformSystems;
-use bevy::{
-    ecs::entity::{EntityHashMap, EntityHashSet},
-    utils::Parallel,
-};
-use bevy_transform_interpolation::{RotationEasingState, ScaleEasingState, TranslationEasingState};
-
 use crate::{
     environment::portal::{Portal, PortalLink},
     math::AffineExt as _,
@@ -98,7 +89,20 @@ pub fn portal_collision_handle(
 ) {
     in_portals.par_iter_mut().for_each_init(
         || events.borrow_local_mut(),
-        |events, (entity, mut in_portal, mut entity_trns, mut entity_pos, mut entity_rot, mut entity_vel, translation_state, rotation_state, scale_state)| {
+        |events, data| {
+            // `rustfmt` seems to choke if this was destructured in the lmabda arguments directly.
+            let (
+                entity,
+                mut in_portal,
+                mut entity_trns,
+                mut entity_pos,
+                mut entity_rot,
+                mut entity_vel,
+                translation_state,
+                rotation_state,
+                scale_state,
+            ) = data;
+
             let mut to_remove = EntityHashSet::new();
             for (&portal, &orientation) in &in_portal.entered {
                 let Ok((&portal_pos, &portal_rot, portal_scl, other_portal)) = portals.get(portal) else {
@@ -123,12 +127,12 @@ pub fn portal_collision_handle(
                     ),
                     (false, Some(Ordering::Greater)) | (true, Some(Ordering::Less))
                 ) {
-                    let map_transform = Affine3A::from_scale_rotation_translation(other_portal_scl, *other_portal_rot, *other_portal_pos)
-                        .mul(Affine3A::from_scale_rotation_translation(portal_scl, *portal_rot, *portal_pos).inverse())
-                        .cleanup_z();
+                    let map_transform = (Affine3A::from_scale_rotation_translation(other_portal_scl, *other_portal_rot, *other_portal_pos)
+                        * Affine3A::from_scale_rotation_translation(portal_scl, *portal_rot, *portal_pos).inverse())
+                    .cleanup_z();
 
-                    let entity_affine = map_transform * Affine3A::from_scale_rotation_translation(entity_trns.scale, **entity_rot, **entity_pos)
-                        .cleanup_z();
+                    let entity_affine =
+                        map_transform * Affine3A::from_scale_rotation_translation(entity_trns.scale, **entity_rot, **entity_pos).cleanup_z();
 
                     let (scl, rot, pos) = entity_affine.to_scale_rotation_translation();
 
@@ -155,7 +159,6 @@ pub fn portal_collision_handle(
                     events.push(Teleported { entity, map_transform });
                     in_portal.entered.clear();
                     in_portal.entered.insert(other_portal.get(), !orientation);
-
                     return
                 }
             }

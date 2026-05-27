@@ -1,7 +1,7 @@
 pub mod prelude {
-    pub use std::{f32::consts::PI, mem::replace, ptr::addr_eq};
+    pub use std::{cmp::Ordering, f32::consts::PI, mem::replace, ops::Mul, ptr::addr_eq};
 
-    pub use avian3d::prelude::*;
+    pub use avian3d::{physics_transform::PhysicsTransformSystems, prelude::*};
     pub use bevy::{
         asset::{AssetHandleProvider, RenderAssetUsages},
         camera::{
@@ -11,6 +11,7 @@ pub mod prelude {
         },
         core_pipeline::core_3d::{AlphaMask3d, Opaque3d, Transmissive3d, Transparent3d},
         ecs::{
+            entity::{EntityHashMap, EntityHashSet},
             lifecycle::HookContext,
             query::{QueryData, QueryItem, ROQueryItem},
             system::{
@@ -19,6 +20,7 @@ pub mod prelude {
             },
             world::DeferredWorld,
         },
+        light::VolumetricFog,
         math::Affine3A,
         mesh::{Indices, MeshVertexBufferLayoutRef, PrimitiveTopology},
         pbr::{DrawMaterial, DrawPrepass, ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline, Shadow},
@@ -39,15 +41,17 @@ pub mod prelude {
             view::{Hdr, ViewTarget},
         },
         shader::{ShaderDefVal, ShaderRef},
+        utils::Parallel,
         window::{PrimaryWindow, WindowCreated, WindowResized, WindowScaleFactorChanged},
     };
     pub use bevy_enhanced_input::prelude::{self::*, Cancel, Press, Release};
     pub use bevy_tnua::prelude::*;
     pub use bevy_tnua_avian3d::prelude::*;
-    pub use bevy_transform_interpolation::prelude::*;
+    pub use bevy_transform_interpolation::{RotationEasingState, ScaleEasingState, TranslationEasingState, prelude::*};
     pub use mimalloc_redirect::MiMalloc;
 }
 
+use bevy::light::VolumetricLight;
 use bevy_tnua::builtins::{TnuaBuiltinJumpConfig, TnuaBuiltinWalkConfig};
 use bevy_tnua_avian3d::TnuaAvian3dPlugin;
 
@@ -238,6 +242,7 @@ fn game_init(
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
         [1, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0],
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -380,7 +385,18 @@ fn game_init(
         }
     }
 
-    commands.spawn((PointLight::default(), Transform::from_xyz(0., 0., 4.)));
+    commands.spawn((
+        SpotLight {
+            intensity: 1_000_000.,
+            shadows_enabled: true,
+            range: 60.,
+            inner_angle: std::f32::consts::FRAC_PI_4,
+            outer_angle: std::f32::consts::FRAC_PI_3,
+            ..default()
+        },
+        VolumetricLight,
+        Transform::from_xyz(6., 6., 5.).looking_at(vec3(-6., -6., -5.), Dir3::Y),
+    ));
 
     let a = commands.spawn((portals[0], Portal::default())).id();
     commands.spawn((portals[1], Portal::default(), PortalTo(a)));
