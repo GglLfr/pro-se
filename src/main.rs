@@ -51,12 +51,12 @@ pub mod prelude {
     pub use mimalloc_redirect::MiMalloc;
 }
 
-use bevy::light::VolumetricLight;
+use bevy::{dev_tools::fps_overlay::FpsOverlayPlugin, light::VolumetricLight};
 use bevy_tnua::builtins::{TnuaBuiltinJumpConfig, TnuaBuiltinWalkConfig};
 use bevy_tnua_avian3d::TnuaAvian3dPlugin;
 
 use crate::{
-    camera::{ClipMaterial, DEFAULT_CAMERA_DISTANCE, PrimaryCamera},
+    camera::{Clip, ClipMaterial, DEFAULT_CAMERA_DISTANCE, PrimaryCamera},
     environment::portal::{Portal, PortalCollisionHooks, PortalTeleport, PortalTo, PortalVisionViewer},
     math::TransformExt as _,
     prelude::*,
@@ -93,14 +93,16 @@ fn main() -> AppExit {
                     ..default()
                 }),
                 ..default()
-            }), /* .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        decorations: false,
-                        resolution: [720; 2].into(),
-                        ..default()
-                    }),
-                    ..default()
-                })*/
+            }),
+            #[cfg(feature = "dev")]
+            FpsOverlayPlugin::default(), /* .set(WindowPlugin {
+                                             primary_window: Some(Window {
+                                                 decorations: false,
+                                                 resolution: [720; 2].into(),
+                                                 ..default()
+                                             }),
+                                             ..default()
+                                         })*/
             report_mimalloc_version,
             PhysicsPlugins::default().with_collision_hooks::<PortalCollisionHooks>(),
             //PhysicsDebugPlugin,
@@ -246,10 +248,10 @@ fn game_init(
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
         [1, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0],
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],*/
-        [1, 0, 4, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
-        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [1, 9, 9, 9, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 9],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9],
         [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
@@ -257,10 +259,10 @@ fn game_init(
         [1, 0, 0, 0, 8, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1],
         [1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1],
         [1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-        [3, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 5, 0, 1],
+        [9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [9, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+        [9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 9, 9, 9, 1],
         /*[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
         [2, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 5],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -316,25 +318,25 @@ fn game_init(
                 2 => {
                     portals[0] = trns
                         .looking_to(Dir3::X, Dir3::Z)
-                        .with_translation(trns.translation - Vec3::X * 0.5)
+                        .with_translation(trns.translation + Vec3::X * 0.5)
                         .with_scale(vec3(3., 1., 1.))
                 }
                 3 => {
                     portals[1] = trns
                         .looking_to(Dir3::X, Dir3::Z)
-                        .with_translation(trns.translation + Vec3::X * 0.5)
+                        .with_translation(trns.translation - Vec3::X * 0.5)
                         .with_scale(vec3(3., 1., 1.))
                 }
                 4 => {
                     portals[2] = trns
                         .looking_to(Dir3::NEG_Y, Dir3::Z)
-                        .with_translation(trns.translation - Vec3::Y * 0.5)
+                        .with_translation(trns.translation + Vec3::Y * 0.5)
                         .with_scale(vec3(3., 1., 1.))
                 }
                 5 => {
                     portals[3] = trns
                         .looking_to(Dir3::NEG_Y, Dir3::Z)
-                        .with_translation(trns.translation + Vec3::Y * 0.5)
+                        .with_translation(trns.translation - Vec3::Y * 0.5)
                         .with_scale(vec3(3., 1., 1.))
                 }
                 6..=7 => {}
@@ -367,10 +369,20 @@ fn game_init(
                         LockedAxes::ROTATION_LOCKED.lock_translation_z(),
                     ));
                 }
+                9 => {
+                    commands.spawn((trns, Mesh3d(cube.clone()), MeshMaterial3d(material.clone())));
+                }
                 unknown => panic!("Unknown block {unknown}"),
             }
         }
     }
+
+    commands.insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.2)));
+    commands.spawn((
+        Mesh3d(meshes.add(Plane3d::default().mesh().size(15., 15.))),
+        MeshMaterial3d(materials.add(Clip::from(Color::Srgba(Srgba::RED)))),
+        Transform::IDENTITY.looking_to(Dir3::NEG_Y, Dir3::Z),
+    ));
 
     commands.spawn((
         SpotLight {
@@ -382,7 +394,7 @@ fn game_init(
             ..default()
         },
         VolumetricLight,
-        Transform::from_xyz(6., 6., 5.).looking_at(vec3(-6., -6., -5.), Dir3::Y),
+        Transform::from_xyz(6., 6., 8.).looking_at(vec3(-6., -6., -8.), Dir3::Y),
     ));
 
     //let a = commands.spawn((portals[0], Portal::default())).id();
