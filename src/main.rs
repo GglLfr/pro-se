@@ -2,6 +2,8 @@ pub mod prelude {
     pub use std::{cmp::Ordering, f32::consts::PI, mem::replace, ops::Mul, ptr::addr_eq};
 
     pub use avian3d::{physics_transform::PhysicsTransformSystems, prelude::*};
+    #[cfg(feature = "dev")]
+    pub use bevy::dev_tools::fps_overlay::FpsOverlayPlugin;
     pub use bevy::{
         asset::{AssetHandleProvider, RenderAssetUsages},
         camera::{
@@ -20,7 +22,7 @@ pub mod prelude {
             },
             world::DeferredWorld,
         },
-        light::VolumetricFog,
+        light::{VolumetricFog, VolumetricLight},
         math::Affine3A,
         mesh::{Indices, MeshVertexBufferLayoutRef, PrimitiveTopology},
         pbr::{DrawMaterial, DrawPrepass, ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline, Shadow},
@@ -45,15 +47,9 @@ pub mod prelude {
         window::{PrimaryWindow, WindowCreated, WindowResized, WindowScaleFactorChanged},
     };
     pub use bevy_enhanced_input::prelude::{self::*, Cancel, Press, Release};
-    pub use bevy_tnua::prelude::*;
-    pub use bevy_tnua_avian3d::prelude::*;
     pub use bevy_transform_interpolation::{RotationEasingState, ScaleEasingState, TranslationEasingState, prelude::*};
     pub use mimalloc_redirect::MiMalloc;
 }
-
-use bevy::{dev_tools::fps_overlay::FpsOverlayPlugin, light::VolumetricLight};
-use bevy_tnua::builtins::{TnuaBuiltinJumpConfig, TnuaBuiltinWalkConfig};
-use bevy_tnua_avian3d::TnuaAvian3dPlugin;
 
 use crate::{
     camera::{Clip, ClipMaterial, DEFAULT_CAMERA_DISTANCE, PrimaryCamera},
@@ -63,6 +59,7 @@ use crate::{
 };
 
 pub mod camera;
+pub mod control;
 pub mod environment;
 pub mod gfx;
 pub mod math;
@@ -106,17 +103,12 @@ fn main() -> AppExit {
             report_mimalloc_version,
             PhysicsPlugins::default().with_collision_hooks::<PortalCollisionHooks>(),
             //PhysicsDebugPlugin,
-            TnuaControllerPlugin::<ControlScheme>::new(FixedUpdate),
-            TnuaAvian3dPlugin::new(FixedUpdate),
             EnhancedInputPlugin,
-            (camera::plugin, environment::plugin, gfx::plugin),
+            (camera::plugin, control::plugin, environment::plugin, gfx::plugin),
         ))
         .init_state::<GameState>()
         .add_systems(Startup, game_init)
-        .add_systems(
-            Update,
-            (move_around, (move_camera, lerp).chain(), apply_controls.in_set(TnuaUserControlsSystems)),
-        )
+        .add_systems(Update, (move_around, (move_camera, lerp).chain()))
         .add_observer(move_camera_on_portal)
         .run()
 }
@@ -218,18 +210,11 @@ fn move_around(time: Res<Time>, mut transforms: Query<(&mut Transform, &Shift)>)
     }
 }
 
-#[derive(TnuaScheme)]
-#[scheme(basis = TnuaBuiltinWalk)]
-enum ControlScheme {
-    Jump(TnuaBuiltinJump),
-}
-
 fn game_init(
     mut commands: Commands,
     mut next: ResMut<NextState<GameState>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ClipMaterial>>,
-    mut control_scheme_configs: ResMut<Assets<ControlSchemeConfig>>,
 ) {
     next.set(GameState::InGame);
     let blocks = [
@@ -356,16 +341,6 @@ fn game_init(
                         RigidBody::Dynamic,
                         SweptCcd::default(),
                         Collider::capsule(0.4, 0.8),
-                        TnuaController::<ControlScheme>::default(),
-                        TnuaConfig::<ControlScheme>(control_scheme_configs.add(ControlSchemeConfig {
-                            basis: TnuaBuiltinWalkConfig {
-                                speed: 10.,
-                                float_height: 1.,
-                                ..default()
-                            },
-                            jump: TnuaBuiltinJumpConfig { height: 4., ..default() },
-                        })),
-                        TnuaAvian3dSensorShape(Collider::cylinder(0.39, 0.0)),
                         LockedAxes::ROTATION_LOCKED.lock_translation_z(),
                     ));
                 }
@@ -428,29 +403,4 @@ fn game_init(
         .spawn((portals[3], Portal::default(), Shift(portals[3].translation.y, true, true)))
         .id();
     commands.entity(b).insert(PortalTo(d));*/
-}
-
-fn apply_controls(keyboard: Res<ButtonInput<KeyCode>>, mut query: Query<&mut TnuaController<ControlScheme>>) {
-    let Ok(mut controller) = query.single_mut() else {
-        return;
-    };
-    controller.initiate_action_feeding();
-
-    let mut direction = Vec3::ZERO;
-
-    if keyboard.pressed(KeyCode::ArrowLeft) {
-        direction -= Vec3::X;
-    }
-    if keyboard.pressed(KeyCode::ArrowRight) {
-        direction += Vec3::X;
-    }
-
-    controller.basis = TnuaBuiltinWalk {
-        desired_motion: direction.normalize_or_zero(),
-        ..default()
-    };
-
-    if keyboard.pressed(KeyCode::Space) {
-        controller.action(ControlScheme::Jump(default()));
-    }
 }
