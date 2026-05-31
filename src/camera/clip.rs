@@ -1,4 +1,8 @@
-use bevy::{ecs::system::lifetimeless::SRes, render::render_resource::BufferDescriptor};
+use bevy::{
+    core_pipeline::prepass::{AlphaMask3dPrepass, Opaque3dPrepass},
+    ecs::system::lifetimeless::SRes,
+    render::render_resource::BufferDescriptor,
+};
 
 use crate::prelude::*;
 
@@ -42,6 +46,8 @@ pub(super) fn plugin(app: &mut App) {
 
         let world = render_app.world_mut();
         overwrite::<Shadow, DrawPrepass>(world);
+        overwrite::<Opaque3dPrepass, DrawPrepass>(world);
+        overwrite::<AlphaMask3dPrepass, DrawPrepass>(world);
         overwrite::<Transmissive3d, DrawMaterial>(world);
         overwrite::<Transparent3d, DrawMaterial>(world);
         overwrite::<Opaque3d, DrawMaterial>(world);

@@ -1,3 +1,8 @@
 use crate::prelude::*;
 
-pub(super) fn plugin(app: &mut App) {}
+mod ground;
+pub use ground::*;
+
+pub(super) fn plugin(app: &mut App) {
+    //
+}

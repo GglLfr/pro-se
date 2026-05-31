@@ -20,6 +20,7 @@ pub struct PortalConnectionDuplicates {
     pub duplicates: EntityHashMap<Entity>,
 }
 
+//TODO this doesn't clip correctly
 pub fn create_portal_duplicates<T: Material>(
     mut commands: Commands,
     mut meshes: Query<

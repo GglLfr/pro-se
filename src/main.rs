@@ -32,6 +32,7 @@ pub mod prelude {
         render::{
             Extract, Render, RenderApp, RenderPlugin, RenderStartup, RenderSystems,
             camera::camera_system,
+            extract_component::{ExtractComponent, ExtractComponentPlugin},
             render_phase::{Draw, DrawFunctions, PhaseItem, RenderCommand, RenderCommandResult, RenderCommandState, TrackedRenderPass},
             render_resource::{
                 AsBindGroup, BindGroup, BindGroupEntry, BindGroupLayoutDescriptor, BufferUsages, DynamicUniformBuffer, PipelineCache,
@@ -47,6 +48,7 @@ pub mod prelude {
         window::{PrimaryWindow, WindowCreated, WindowResized, WindowScaleFactorChanged},
     };
     pub use bevy_enhanced_input::prelude::{self::*, Cancel, Press, Release};
+    pub use bevy_skein::{SkeinAppExt as _, SkeinPlugin};
     pub use bevy_transform_interpolation::{RotationEasingState, ScaleEasingState, TranslationEasingState, prelude::*};
     pub use mimalloc_redirect::MiMalloc;
 }
@@ -104,6 +106,9 @@ fn main() -> AppExit {
             PhysicsPlugins::default().with_collision_hooks::<PortalCollisionHooks>(),
             //PhysicsDebugPlugin,
             EnhancedInputPlugin,
+            SkeinPlugin {
+                handle_brp: cfg!(feature = "dev"),
+            },
             (camera::plugin, control::plugin, environment::plugin, gfx::plugin),
         ))
         .init_state::<GameState>()
@@ -126,7 +131,7 @@ fn move_camera(
     camera: Single<(&mut Transform, Option<&mut Lerp>), (With<PrimaryCamera>, Without<PortalVisionViewer>)>,
     viewer: Single<&Transform, With<PortalVisionViewer>>,
 ) {
-    let (mut trns, lerp) = camera.into_inner();
+    /*let (mut trns, lerp) = camera.into_inner();
     if let Some(mut lerp) = lerp {
         if let Some(pos) = &mut lerp.pos {
             pos[0] = viewer.translation.with_z(pos[0].z);
@@ -136,7 +141,7 @@ fn move_camera(
         trns.rotation = viewer.rotation;
         trns.scale = viewer.scale;
         trns.translation = viewer.translation.with_z(DEFAULT_CAMERA_DISTANCE);
-    }
+    }*/
 }
 
 fn lerp_on_replace(mut world: DeferredWorld, HookContext { entity, .. }: HookContext) {
@@ -280,7 +285,7 @@ fn game_init(
                 0 => {}
                 1 => {
                     commands.spawn((
-                        trns,
+                        trns.with_scale(vec3(1., 1., 3.)),
                         Mesh3d(cube.clone()),
                         MeshMaterial3d(material.clone()),
                         RigidBody::Static,
@@ -303,25 +308,25 @@ fn game_init(
                 2 => {
                     portals[0] = trns
                         .looking_to(Dir3::X, Dir3::Z)
-                        .with_translation(trns.translation + Vec3::X * 0.5)
+                        .with_translation(trns.translation + Vec3::X * 0.499)
                         .with_scale(vec3(3., 1., 1.))
                 }
                 3 => {
                     portals[1] = trns
                         .looking_to(Dir3::X, Dir3::Z)
-                        .with_translation(trns.translation - Vec3::X * 0.5)
+                        .with_translation(trns.translation - Vec3::X * 0.499)
                         .with_scale(vec3(3., 1., 1.))
                 }
                 4 => {
                     portals[2] = trns
                         .looking_to(Dir3::NEG_Y, Dir3::Z)
-                        .with_translation(trns.translation + Vec3::Y * 0.5)
+                        .with_translation(trns.translation + Vec3::Y * 0.499)
                         .with_scale(vec3(3., 1., 1.))
                 }
                 5 => {
                     portals[3] = trns
                         .looking_to(Dir3::NEG_Y, Dir3::Z)
-                        .with_translation(trns.translation - Vec3::Y * 0.5)
+                        .with_translation(trns.translation - Vec3::Y * 0.499)
                         .with_scale(vec3(3., 1., 1.))
                 }
                 6..=7 => {}
@@ -345,18 +350,19 @@ fn game_init(
                     ));
                 }
                 9 => {
-                    commands.spawn((trns, Mesh3d(cube.clone()), MeshMaterial3d(material.clone())));
+                    commands.spawn((trns.with_scale(vec3(1., 1., 3.)), Mesh3d(cube.clone()), MeshMaterial3d(material.clone())));
                 }
                 unknown => panic!("Unknown block {unknown}"),
             }
         }
     }
 
-    commands.insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.2)));
+    commands.insert_resource(ClearColor(Color::srgb(0.2, 0.2, 0.4)));
+    commands.insert_resource(GlobalAmbientLight { ..default() });
     commands.spawn((
         Mesh3d(meshes.add(Plane3d::default().mesh().size(15., 15.))),
         MeshMaterial3d(materials.add(Clip::from(Color::Srgba(Srgba::RED)))),
-        Transform::IDENTITY.looking_to(Dir3::NEG_Y, Dir3::Z),
+        Transform::from_xyz(0., 0., -1.).looking_to(Dir3::NEG_Y, Dir3::Z),
     ));
 
     commands.spawn((
@@ -369,17 +375,17 @@ fn game_init(
             ..default()
         },
         VolumetricLight,
-        Transform::from_xyz(6., 6., 8.).looking_at(vec3(-6., -6., -8.), Dir3::Y),
+        Transform::from_xyz(6., 6., 8.).looking_at(vec3(-6., -6., -4.), Dir3::Y),
     ));
 
     //let a = commands.spawn((portals[0], Portal::default())).id();
     //commands.spawn((portals[1], Portal::default(), PortalTo(a)));
 
     let a = commands.spawn((portals[0], Portal::default())).id();
-    commands.spawn((portals[2], Portal::default(), PortalTo(a)));
+    //commands.spawn((portals[2], Portal::default(), PortalTo(a)));
 
     let b = commands.spawn((portals[1], Portal::default())).id();
-    commands.spawn((portals[3], Portal::default(), PortalTo(b)));
+    //commands.spawn((portals[3], Portal::default(), PortalTo(b)));
 
     /*portals[0].translation += vec3(-0.5, 1., 0.);
     portals[1].translation += vec3(-0.5, -1., 0.);

@@ -43,6 +43,16 @@ features = [
     "ui",
 ]
 
+[dependencies.bevy_skein]
+version = "0.5"
+default-features = false
+
 [features]
 default = ["dev"]
-dev = ["avian3d/debug-plugin", "bevy/dev"]
+dev = [
+    "avian3d/debug-plugin",
+    "bevy/dev",
+    "bevy/pan_camera",
+    "bevy_skein/brp",
+    "bevy_skein/presets",
+]
