@@ -1,5 +1,3 @@
-use bevy::core_pipeline::tonemapping::DebandDither;
-
 use crate::prelude::*;
 
 #[derive(Reflect, Component, ExtractComponent, Debug, Default, Clone, Copy)]
@@ -16,7 +14,5 @@ pub struct PrimaryCamera;
         ambient_intensity: 0.,
         ..default()
     },
-    Msaa::Off,
-    DebandDither::Disabled,
 )]
 pub struct GameCamera;

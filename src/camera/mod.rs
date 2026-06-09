@@ -22,7 +22,7 @@ pub(super) fn plugin(app: &mut App) {
     }
 }
 
-pub const DEFAULT_CAMERA_DISTANCE: f32 = 30.;
+pub const DEFAULT_CAMERA_DISTANCE: f32 = 20.;
 
 pub fn spawn_camera(mut commands: Commands) {
     commands.spawn((

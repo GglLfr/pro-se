@@ -217,12 +217,15 @@ fn move_around(time: Res<Time>, mut transforms: Query<(&mut Transform, &Shift)>)
 
 fn game_init(
     mut commands: Commands,
+    server: Res<AssetServer>,
     mut next: ResMut<NextState<GameState>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ClipMaterial>>,
 ) {
     next.set(GameState::InGame);
-    let blocks = [
+    commands.spawn(SceneRoot(server.load(GltfAssetLabel::Scene(0).from_asset("level.gltf"))));
+
+    /*let blocks = [
         /*[1, 0, 0, 0, 3, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
@@ -409,4 +412,5 @@ fn game_init(
         .spawn((portals[3], Portal::default(), Shift(portals[3].translation.y, true, true)))
         .id();
     commands.entity(b).insert(PortalTo(d));*/
+    */
 }

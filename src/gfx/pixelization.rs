@@ -8,11 +8,10 @@ use bevy::{
     render::{
         render_graph::{NodeRunError, RenderGraphContext, RenderGraphExt as _, RenderLabel, ViewNode, ViewNodeRunner},
         render_resource::{
-            BindGroupEntries, BindGroupLayoutEntries, CachedRenderPipelineId, ColorTargetState, ColorWrites, FragmentState,
+            BindGroupEntries, BindGroupLayoutEntries, CachedRenderPipelineId, ColorTargetState, ColorWrites, FragmentState, MultisampleState,
             RenderPassColorAttachment, RenderPassDescriptor, TextureSampleType, binding_types::texture_2d,
         },
         renderer::RenderContext,
-        view::ViewDepthTexture,
     },
 };
 
@@ -41,13 +40,7 @@ pub fn init_pixelization_pipeline(
 ) {
     let layout = BindGroupLayoutDescriptor::new(
         "pixelation_bind_group_layout",
-        &BindGroupLayoutEntries::sequential(
-            ShaderStages::FRAGMENT,
-            (
-                texture_2d(TextureSampleType::Float { filterable: true }),
-                texture_2d(TextureSampleType::Depth),
-            ),
-        ),
+        &BindGroupLayoutEntries::sequential(ShaderStages::FRAGMENT, (texture_2d(TextureSampleType::Float { filterable: false }),)),
     );
 
     let shader = server.load("shaders/post_process/pixelization.wgsl");
@@ -65,6 +58,11 @@ pub fn init_pixelization_pipeline(
             })],
             ..default()
         }),
+        multisample: MultisampleState {
+            count: 4,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
         zero_initialize_workgroup_memory: false,
         ..default()
     });
@@ -78,13 +76,13 @@ pub struct PixelizationLabel;
 #[derive(Default)]
 pub struct PixelizationNode;
 impl ViewNode for PixelizationNode {
-    type ViewQuery = (Read<PrimaryCamera>, Read<ViewTarget>, Read<ViewDepthTexture>);
+    type ViewQuery = (Read<PrimaryCamera>, Read<ViewTarget>);
 
     fn run<'w>(
         &self,
         _graph: &mut RenderGraphContext,
         render_context: &mut RenderContext<'w>,
-        (.., target, depth): QueryItem<'w, '_, Self::ViewQuery>,
+        (.., target): QueryItem<'w, '_, Self::ViewQuery>,
         world: &'w World,
     ) -> Result<(), NodeRunError> {
         let pipeline = world.resource::<PixelizationPipeline>();
@@ -96,15 +94,15 @@ impl ViewNode for PixelizationNode {
         let bind_group = render_context.render_device().create_bind_group(
             "pixelization_bind_group",
             &cache.get_bind_group_layout(&pipeline.layout),
-            &BindGroupEntries::sequential((post_process.source, &depth.texture.create_view(&default()))),
+            &BindGroupEntries::sequential((post_process.source,)),
         );
 
         let mut render_pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
             label: Some("pixelization_pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
-                view: post_process.destination,
+                view: target.sampled_main_texture_view().unwrap(),
                 depth_slice: None,
-                resolve_target: None,
+                resolve_target: Some(post_process.destination),
                 ops: default(),
             })],
             depth_stencil_attachment: None,
