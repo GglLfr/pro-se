@@ -223,7 +223,10 @@ fn game_init(
     mut materials: ResMut<Assets<ClipMaterial>>,
 ) {
     next.set(GameState::InGame);
-    commands.spawn(SceneRoot(server.load(GltfAssetLabel::Scene(0).from_asset("level.gltf"))));
+    commands.spawn((
+        SceneRoot(server.load(GltfAssetLabel::Scene(0).from_asset("level.gltf"))),
+        ColliderConstructorHierarchy::new(ColliderConstructor::ConvexDecompositionFromMesh),
+    ));
 
     /*let blocks = [
         /*[1, 0, 0, 0, 3, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1],

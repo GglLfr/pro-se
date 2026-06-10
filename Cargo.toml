@@ -19,17 +19,7 @@ tracing = { version = "*", features = [
 [dependencies.avian3d]
 version = "0.6"
 #git = "https://github.com/Jondolf/avian.git"
-default-features = false
-features = [
-    "3d",
-    "f32",
-    "parry-f32",
-    "xpbd_joints",
-    "parallel",
-    "bevy_scene",
-    "bevy_picking",
-    "simd",
-]
+features = ["simd"]
 
 [dependencies.bevy]
 version = "0.18"
@@ -49,10 +39,4 @@ default-features = false
 
 [features]
 default = ["dev"]
-dev = [
-    "avian3d/debug-plugin",
-    "bevy/dev",
-    "bevy/pan_camera",
-    "bevy_skein/brp",
-    "bevy_skein/presets",
-]
+dev = ["bevy/dev", "bevy/pan_camera", "bevy_skein/brp", "bevy_skein/presets"]

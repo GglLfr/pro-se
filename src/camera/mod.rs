@@ -18,7 +18,7 @@ pub(super) fn plugin(app: &mut App) {
         use bevy::camera_controller::pan_camera::{PanCamera, PanCameraPlugin};
 
         app.add_plugins(PanCameraPlugin)
-            .register_required_components_with::<PrimaryCamera, PanCamera>(|| PanCamera { pan_speed: 1., ..default() });
+            .register_required_components_with::<PrimaryCamera, PanCamera>(|| PanCamera { pan_speed: 10., ..default() });
     }
 }
 
