@@ -1,13 +1,11 @@
 use crate::prelude::*;
 
-mod pixelization;
-use bevy::ecs::component::Mutable;
-pub use pixelization::*;
-
 pub const LAYER_PORTAL_RESERVE: usize = 8;
 
 pub(super) fn plugin(app: &mut App) {
-    app.add_plugins(pixelization::plugin)
+    app.register_required_components::<DirectionalLight, VolumetricLight>()
+        .register_required_components::<PointLight, VolumetricLight>()
+        .register_required_components::<SpotLight, VolumetricLight>()
         .add_observer(on_light_insert_enable_shadows::<DirectionalLight>)
         .add_observer(on_light_insert_enable_shadows::<PointLight>)
         .add_observer(on_light_insert_enable_shadows::<SpotLight>);
@@ -21,31 +19,31 @@ pub trait LightSource {
 
 impl LightSource for DirectionalLight {
     fn shadows_enabled(&self) -> bool {
-        self.shadows_enabled
+        self.shadow_maps_enabled
     }
 
     fn set_shadows_enabled(&mut self, enabled: bool) {
-        self.shadows_enabled = enabled;
+        self.shadow_maps_enabled = enabled;
     }
 }
 
 impl LightSource for PointLight {
     fn shadows_enabled(&self) -> bool {
-        self.shadows_enabled
+        self.shadow_maps_enabled
     }
 
     fn set_shadows_enabled(&mut self, enabled: bool) {
-        self.shadows_enabled = enabled;
+        self.shadow_maps_enabled = enabled;
     }
 }
 
 impl LightSource for SpotLight {
     fn shadows_enabled(&self) -> bool {
-        self.shadows_enabled
+        self.shadow_maps_enabled
     }
 
     fn set_shadows_enabled(&mut self, enabled: bool) {
-        self.shadows_enabled = enabled;
+        self.shadow_maps_enabled = enabled;
     }
 }
 

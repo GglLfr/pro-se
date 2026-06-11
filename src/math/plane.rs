@@ -43,10 +43,10 @@ impl HalfSpaceExt for HalfSpace {
     }
 }
 
-pub trait FrustumExt {
-    fn as_frustum(&self) -> Frustum;
+pub trait ViewFrustumExt {
+    fn as_frustum(&self) -> ViewFrustum;
 
-    fn cuboid(at: Affine3A, min: Vec3A, max: Vec3A) -> Frustum {
+    fn cuboid(at: Affine3A, min: Vec3A, max: Vec3A) -> ViewFrustum {
         let min = at.transform_point3a(min);
         let max = at.transform_point3a(max);
 
@@ -54,7 +54,7 @@ pub trait FrustumExt {
         let up = (at.matrix3.y_axis * Vec3A::ONE).normalize_or(Vec3A::Y);
         let back = (at.matrix3.z_axis * Vec3A::ONE).normalize_or(Vec3A::Z);
 
-        Frustum {
+        ViewFrustum {
             half_spaces: [
                 HalfSpace::from_point_normal(min, up),
                 HalfSpace::from_point_normal(min, right),
@@ -67,8 +67,8 @@ pub trait FrustumExt {
     }
 }
 
-impl FrustumExt for Frustum {
-    fn as_frustum(&self) -> Frustum {
+impl ViewFrustumExt for ViewFrustum {
+    fn as_frustum(&self) -> ViewFrustum {
         *self
     }
 }

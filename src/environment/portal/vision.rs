@@ -7,7 +7,7 @@ use crate::{
     camera::{CameraPool, CameraPoolQuery, ClipFrustum, ClipPlane, ClipProjection, PooledCameraSystems, PrimaryCamera},
     environment::portal::{Portal, PortalLink},
     gfx::LAYER_PORTAL_RESERVE,
-    math::{FrustumExt as _, GlobalTransformExt as _, HalfSpaceExt as _},
+    math::{GlobalTransformExt as _, HalfSpaceExt as _, ViewFrustumExt as _},
     prelude::*,
 };
 
@@ -309,7 +309,7 @@ fn create_portal_vision(
                 other_portal_trns.forward().to_vec3a() * orientation,
             )),
             //TODO user-defined half-space
-            frustum: ClipFrustum::Custom(Frustum::cuboid(
+            frustum: ClipFrustum::Custom(ViewFrustum::cuboid(
                 (map_transform * vision_global_trns).affine(),
                 vec3a(-0.5, -0.5, 0.),
                 vec3a(0.5, 0.5, -1.),
@@ -328,7 +328,7 @@ fn create_portal_vision(
                 let (e, material_id, ref mut visible) = *occupied.into_mut();
                 *visible = true;
 
-                let material = materials.get_mut(material_id).ok_or("Material is removed")?;
+                let material = materials.get_mut(material_id).ok_or("Material is removed")?.into_inner();
                 material.clip = (entrance_clip, portal_vision_clip);
                 material.vision_length = portal.vision_length;
 

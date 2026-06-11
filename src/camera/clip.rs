@@ -75,7 +75,7 @@ pub enum ClipPlane {
 pub enum ClipFrustum {
     #[default]
     Default,
-    Custom(Frustum),
+    Custom(ViewFrustum),
 }
 
 /// [`PerspectiveProjection`], but uses clip distances instead of oblique projection.
@@ -144,11 +144,11 @@ impl CameraProjection for ClipProjection {
                 let mut frustum = self.perspective().compute_frustum(camera_transform);
                 match self.clip {
                     ClipPlane::None => {}
-                    ClipPlane::World(half_space) => frustum.half_spaces[Frustum::NEAR_PLANE_IDX] = half_space,
+                    ClipPlane::World(half_space) => frustum.half_spaces[ViewFrustum::NEAR_PLANE_IDX] = half_space,
                 }
                 frustum
             }
-            ClipFrustum::Custom(frustum) => frustum,
+            ClipFrustum::Custom(frustum) => Frustum(frustum),
         }
     }
 }

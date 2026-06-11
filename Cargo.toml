@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy_enhanced_input = "0.25"
-bevy_transform_interpolation = "0.4"
+bevy_enhanced_input = "0.26.0-rc.1"
+#bevy_transform_interpolation = "0.4"
+bevy_transform_interpolation = { git = "https://github.com/olukowski/bevy_transform_interpolation" }
 log = { version = "*", features = [
     "max_level_debug",
     "release_max_level_warn",
@@ -17,24 +18,26 @@ tracing = { version = "*", features = [
 ] }
 
 [dependencies.avian3d]
-version = "0.6"
-#git = "https://github.com/Jondolf/avian.git"
+#version = "0.6"
+git = "https://github.com/olukowski/avian"
 features = ["simd"]
 
 [dependencies.bevy]
-version = "0.18"
+version = "0.19.0-rc.3"
+
 default-features = false
 features = [
     "default_app",
     "default_platform",
     "3d_bevy_render",
+    "ui_bevy_render",
     "scene",
     "picking",
-    "ui",
+    "pbr_transmission_textures",
 ]
 
 [dependencies.bevy_skein]
-version = "0.5"
+version = "0.6.0-rc.1"
 default-features = false
 
 [features]

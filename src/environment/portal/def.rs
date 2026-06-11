@@ -1,8 +1,6 @@
 use crate::prelude::*;
 
-pub(super) fn plugin(app: &mut App) {
-    app.add_observer(on_portal_to_discard);
-}
+pub(super) fn plugin(_app: &mut App) {}
 
 #[derive(Reflect, Component, Debug, Clone, Copy, PartialEq)]
 #[reflect(Component, Debug, Default, Clone, PartialEq)]
@@ -26,7 +24,7 @@ impl Default for Portal {
 
 #[derive(Reflect, Component, Debug, Clone, Copy, PartialEq, Deref)]
 #[reflect(Component, Debug, Clone, PartialEq)]
-//TODO 0.19 #[component(immutable, on_discard = on_portal_to_discard)]
+#[component(immutable, on_discard = on_portal_to_discard)]
 #[relationship(relationship_target = PortalFrom)]
 pub struct PortalTo(pub Entity);
 impl PortalTo {
@@ -35,15 +33,10 @@ impl PortalTo {
     }
 }
 
-fn on_portal_to_discard(discard: On<Replace, PortalTo>, this: Query<&PortalTo>, mut commands: Commands) -> Result {
-    commands.entity(this.get(discard.entity)?.get()).try_despawn();
-    Ok(())
-}
-
-/*TODO 0.19 fn on_portal_to_discard(mut world: DeferredWorld, HookContext { entity, .. }: HookContext) {
+fn on_portal_to_discard(mut world: DeferredWorld, HookContext { entity, .. }: HookContext) {
     let link = **world.get::<PortalTo>(entity).unwrap();
     world.commands().entity(link).try_despawn();
-}*/
+}
 
 #[derive(Reflect, Component, Debug, Clone, Copy, PartialEq, Deref)]
 #[reflect(Component, Debug, Clone, PartialEq)]

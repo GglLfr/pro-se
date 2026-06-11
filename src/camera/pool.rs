@@ -159,15 +159,17 @@ pub fn update_pooled_dirty_images(
                 size.x,
                 size.y,
                 match is_hdr {
-                    false => TextureFormat::bevy_default(),
+                    false => TextureFormat::Rgba8UnormSrgb,
                     true => ViewTarget::TEXTURE_FORMAT_HDR,
                 },
                 None,
             )
         };
-        match images.get_mut(handle) {
-            None => images.insert(handle, new)?,
-            Some(image) => *image = new,
+
+        if let Some(mut image) = images.get_mut(handle) {
+            *image = new;
+        } else {
+            images.insert(handle, new)?;
         }
     }
 

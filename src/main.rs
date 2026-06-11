@@ -7,12 +7,13 @@ pub mod prelude {
     pub use bevy::{
         asset::{AssetHandleProvider, RenderAssetUsages},
         camera::{
-            CameraProjection, CameraUpdateSystems, RenderTarget, SubCameraView,
-            primitives::{Aabb, Frustum, HalfSpace},
+            CameraProjection, CameraUpdateSystems, Hdr, RenderTarget, SubCameraView,
+            primitives::{Aabb, Frustum},
             visibility::{NoAutoAabb, RenderLayers, VisibilitySystems},
         },
-        core_pipeline::core_3d::{AlphaMask3d, Opaque3d, Transmissive3d, Transparent3d},
+        core_pipeline::core_3d::{AlphaMask3d, Opaque3d, Transparent3d},
         ecs::{
+            component::Mutable,
             entity::{EntityHashMap, EntityHashSet},
             lifecycle::HookContext,
             query::{QueryData, QueryItem, ROQueryItem},
@@ -25,7 +26,9 @@ pub mod prelude {
         light::{VolumetricFog, VolumetricLight},
         math::Affine3A,
         mesh::{Indices, MeshVertexBufferLayoutRef, PrimitiveTopology},
-        pbr::{DrawMaterial, DrawPrepass, ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline, Shadow},
+        pbr::{
+            DrawMaterial, DrawPrepass, ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline, Shadow, Transmissive3d,
+        },
         platform::collections::{HashMap, hash_map::Entry},
         post_process::bloom::Bloom,
         prelude::*,
@@ -41,7 +44,7 @@ pub mod prelude {
             renderer::{RenderDevice, RenderQueue},
             settings::{RenderCreation, WgpuFeatures, WgpuSettings},
             sync_world::RenderEntity,
-            view::{Hdr, ViewTarget},
+            view::ViewTarget,
         },
         shader::{ShaderDefVal, ShaderRef},
         utils::Parallel,
@@ -52,6 +55,8 @@ pub mod prelude {
     pub use bevy_transform_interpolation::{RotationEasingState, ScaleEasingState, TranslationEasingState, prelude::*};
     pub use mimalloc_redirect::MiMalloc;
 }
+
+use bevy::light::FogVolume;
 
 use crate::{
     camera::{Clip, ClipMaterial, DEFAULT_CAMERA_DISTANCE, PrimaryCamera},
@@ -67,7 +72,7 @@ pub mod gfx;
 pub mod math;
 
 #[derive(Reflect, States, Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[reflect(State, Debug, Default, Clone, PartialEq, /*TODO 0.19 PartialOrd,*/ Hash)]
+#[reflect(State, Debug, Default, Clone, PartialEq, PartialOrd, Hash)]
 pub enum GameState {
     #[default]
     Init,
@@ -87,7 +92,7 @@ fn main() -> AppExit {
     App::new()
         .add_plugins((
             DefaultPlugins.set(RenderPlugin {
-                render_creation: RenderCreation::Automatic(WgpuSettings {
+                render_creation: RenderCreation::from(WgpuSettings {
                     features: WgpuFeatures::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES | WgpuFeatures::CLIP_DISTANCES,
                     ..default()
                 }),
@@ -119,7 +124,7 @@ fn main() -> AppExit {
 }
 
 #[derive(Component, Clone, Copy)]
-#[component(on_replace = lerp_on_replace)]
+#[component(on_discard = lerp_on_discard)]
 struct Lerp {
     rot: [Quat; 2],
     scl: [Vec3; 2],
@@ -144,7 +149,7 @@ fn move_camera(
     }*/
 }
 
-fn lerp_on_replace(mut world: DeferredWorld, HookContext { entity, .. }: HookContext) {
+fn lerp_on_discard(mut world: DeferredWorld, HookContext { entity, .. }: HookContext) {
     let &lerp = world.get::<Lerp>(entity).unwrap();
     let mut transform = world.get_mut::<Transform>(entity).unwrap();
     transform.rotation = lerp.rot[1];
@@ -224,9 +229,15 @@ fn game_init(
 ) {
     next.set(GameState::InGame);
     commands.spawn((
-        SceneRoot(server.load(GltfAssetLabel::Scene(0).from_asset("level.gltf"))),
+        WorldAssetRoot(server.load(GltfAssetLabel::Scene(0).from_asset("zones/zone_master.gltf"))),
         ColliderConstructorHierarchy::new(ColliderConstructor::ConvexDecompositionFromMesh),
     ));
+
+    commands.insert_resource(GlobalAmbientLight {
+        color: Color::srgb(0.4, 0.3, 1.),
+        brightness: 80.,
+        ..default()
+    });
 
     /*let blocks = [
         /*[1, 0, 0, 0, 3, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1],
@@ -364,12 +375,6 @@ fn game_init(
     }
 
     commands.insert_resource(ClearColor(Color::srgb(0.2, 0.2, 0.4)));
-    commands.insert_resource(GlobalAmbientLight { ..default() });
-    commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(15., 15.))),
-        MeshMaterial3d(materials.add(Clip::from(Color::Srgba(Srgba::RED)))),
-        Transform::from_xyz(0., 0., -1.).looking_to(Dir3::NEG_Y, Dir3::Z),
-    ));
 
     commands.spawn((
         SpotLight {
