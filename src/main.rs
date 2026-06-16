@@ -5,13 +5,18 @@ pub mod prelude {
     #[cfg(feature = "dev")]
     pub use bevy::dev_tools::fps_overlay::FpsOverlayPlugin;
     pub use bevy::{
+        anti_alias::{contrast_adaptive_sharpening::ContrastAdaptiveSharpening, taa::TemporalAntiAliasing},
         asset::{AssetHandleProvider, RenderAssetUsages},
         camera::{
             CameraProjection, CameraUpdateSystems, Hdr, RenderTarget, SubCameraView,
             primitives::{Aabb, Frustum},
             visibility::{NoAutoAabb, RenderLayers, VisibilitySystems},
         },
-        core_pipeline::core_3d::{AlphaMask3d, Opaque3d, Transparent3d},
+        core_pipeline::{
+            core_3d::{AlphaMask3d, Opaque3d, Transparent3d},
+            prepass::{AlphaMask3dPrepass, Opaque3dPrepass},
+            tonemapping::DebandDither,
+        },
         ecs::{
             component::Mutable,
             entity::{EntityHashMap, EntityHashSet},
@@ -19,11 +24,11 @@ pub mod prelude {
             query::{QueryData, QueryItem, ROQueryItem},
             system::{
                 ReadOnlySystemParam, SystemParam, SystemParamItem,
-                lifetimeless::{Read, Write},
+                lifetimeless::{Read, SRes, Write},
             },
             world::DeferredWorld,
         },
-        light::{VolumetricFog, VolumetricLight},
+        light::{ShadowFilteringMethod, VolumetricFog, VolumetricLight},
         math::Affine3A,
         mesh::{Indices, MeshVertexBufferLayoutRef, PrimitiveTopology},
         pbr::{
@@ -38,8 +43,9 @@ pub mod prelude {
             extract_component::{ExtractComponent, ExtractComponentPlugin},
             render_phase::{Draw, DrawFunctions, PhaseItem, RenderCommand, RenderCommandResult, RenderCommandState, TrackedRenderPass},
             render_resource::{
-                AsBindGroup, BindGroup, BindGroupEntry, BindGroupLayoutDescriptor, BufferUsages, DynamicUniformBuffer, PipelineCache,
-                RenderPipelineDescriptor, ShaderStages, ShaderType, SpecializedMeshPipelineError, TextureFormat, binding_types::uniform_buffer,
+                AsBindGroup, BindGroup, BindGroupEntry, BindGroupLayoutDescriptor, BufferDescriptor, BufferUsages, DynamicUniformBuffer,
+                PipelineCache, RenderPipelineDescriptor, ShaderStages, ShaderType, SpecializedMeshPipelineError, TextureFormat,
+                binding_types::uniform_buffer,
             },
             renderer::{RenderDevice, RenderQueue},
             settings::{RenderCreation, WgpuFeatures, WgpuSettings},
@@ -56,14 +62,7 @@ pub mod prelude {
     pub use mimalloc_redirect::MiMalloc;
 }
 
-use bevy::light::FogVolume;
-
-use crate::{
-    camera::{Clip, ClipMaterial, DEFAULT_CAMERA_DISTANCE, PrimaryCamera},
-    environment::portal::{Portal, PortalCollisionHooks, PortalTeleport, PortalTo, PortalVisionViewer},
-    math::TransformExt as _,
-    prelude::*,
-};
+use crate::{environment::portal::PortalCollisionHooks, prelude::*};
 
 pub mod camera;
 pub mod control;
@@ -118,85 +117,8 @@ fn main() -> AppExit {
         ))
         .init_state::<GameState>()
         .add_systems(Startup, game_init)
-        .add_systems(Update, (move_around, (move_camera, lerp).chain()))
-        .add_observer(move_camera_on_portal)
+        .add_systems(Update, move_around)
         .run()
-}
-
-#[derive(Component, Clone, Copy)]
-#[component(on_discard = lerp_on_discard)]
-struct Lerp {
-    rot: [Quat; 2],
-    scl: [Vec3; 2],
-    pos: Option<[Vec3; 2]>,
-    started: f32,
-}
-
-fn move_camera(
-    camera: Single<(&mut Transform, Option<&mut Lerp>), (With<PrimaryCamera>, Without<PortalVisionViewer>)>,
-    viewer: Single<&Transform, With<PortalVisionViewer>>,
-) {
-    /*let (mut trns, lerp) = camera.into_inner();
-    if let Some(mut lerp) = lerp {
-        if let Some(pos) = &mut lerp.pos {
-            pos[0] = viewer.translation.with_z(pos[0].z);
-            pos[1] = viewer.translation.with_z(DEFAULT_CAMERA_DISTANCE);
-        }
-    } else {
-        trns.rotation = viewer.rotation;
-        trns.scale = viewer.scale;
-        trns.translation = viewer.translation.with_z(DEFAULT_CAMERA_DISTANCE);
-    }*/
-}
-
-fn lerp_on_discard(mut world: DeferredWorld, HookContext { entity, .. }: HookContext) {
-    let &lerp = world.get::<Lerp>(entity).unwrap();
-    let mut transform = world.get_mut::<Transform>(entity).unwrap();
-    transform.rotation = lerp.rot[1];
-    transform.scale = lerp.scl[1];
-    if let Some(pos) = lerp.pos {
-        transform.translation = pos[1];
-    }
-}
-
-fn move_camera_on_portal(
-    teleported: On<PortalTeleport>,
-    mut commands: Commands,
-    time: Res<Time>,
-    camera: Single<(Entity, &Transform), With<PrimaryCamera>>,
-) {
-    let new_camera_transform = Transform::from_affine(teleported.map_transform * camera.1.compute_affine());
-    commands.entity(camera.0).insert(Lerp {
-        rot: [new_camera_transform.rotation, camera.1.rotation],
-        scl: [new_camera_transform.scale, camera.1.scale],
-        pos: Some([new_camera_transform.translation, camera.1.translation]),
-        started: time.elapsed_secs(),
-    });
-
-    let (scale, rotation, ..) = teleported.map_transform.to_scale_rotation_translation();
-    commands.entity(teleported.entity).insert(Lerp {
-        rot: [rotation, Quat::IDENTITY],
-        scl: [scale, Vec3::ONE],
-        pos: None,
-        started: time.elapsed_secs(),
-    });
-}
-
-fn lerp(mut commands: Commands, time: Res<Time>, mut lerps: Query<(Entity, &mut Transform, &Lerp)>) {
-    for (e, mut trns, lerp) in &mut lerps {
-        let t = ((time.elapsed_secs() - lerp.started) / 0.32).min(1.);
-        let t = t * t * (3. - 2. * t);
-
-        trns.rotation = lerp.rot[0].slerp(lerp.rot[1], t);
-        trns.scale = lerp.scl[0].lerp(lerp.scl[1], t);
-        if let Some(pos) = lerp.pos {
-            trns.translation = pos[0].lerp(pos[1], t);
-        }
-
-        if t >= 1. {
-            commands.entity(e).remove::<Lerp>();
-        }
-    }
 }
 
 #[derive(Component)]
@@ -220,24 +142,12 @@ fn move_around(time: Res<Time>, mut transforms: Query<(&mut Transform, &Shift)>)
     }
 }
 
-fn game_init(
-    mut commands: Commands,
-    server: Res<AssetServer>,
-    mut next: ResMut<NextState<GameState>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ClipMaterial>>,
-) {
+fn game_init(mut commands: Commands, server: Res<AssetServer>, mut next: ResMut<NextState<GameState>>) {
     next.set(GameState::InGame);
     commands.spawn((
         WorldAssetRoot(server.load(GltfAssetLabel::Scene(0).from_asset("zones/zone_master.gltf"))),
         ColliderConstructorHierarchy::new(ColliderConstructor::ConvexDecompositionFromMesh),
     ));
-
-    commands.insert_resource(GlobalAmbientLight {
-        color: Color::srgb(0.4, 0.3, 1.),
-        brightness: 80.,
-        ..default()
-    });
 
     /*let blocks = [
         /*[1, 0, 0, 0, 3, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1],

@@ -90,7 +90,7 @@ pub fn update_primary_camera(
         windows,
         images,
         manual_texture_views,
-        cameras.transmute_lens::<(&mut Camera, &RenderTarget, &mut Projection)>().query(),
+        cameras.transmute_lens().query(),
     )?;
 
     for (_, _, trns, mut frustum, camera, _, projection) in &mut cameras {

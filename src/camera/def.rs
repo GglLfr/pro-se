@@ -1,10 +1,17 @@
-use bevy::{self, core_pipeline::tonemapping::DebandDither};
-
 use crate::prelude::*;
 
 #[derive(Reflect, Component, ExtractComponent, Debug, Default, Clone, Copy)]
 #[reflect(Component, Debug, Default, Clone)]
-#[require(IsDefaultUiCamera, GameCamera, Bloom, DebandDither::Enabled)]
+#[require(
+    IsDefaultUiCamera,
+    GameCamera,
+    Bloom,
+    ShadowFilteringMethod::Temporal,
+    Msaa::Off,
+    TemporalAntiAliasing,
+    ContrastAdaptiveSharpening,
+    DebandDither::Enabled
+)]
 pub struct PrimaryCamera;
 
 #[derive(Reflect, Component, Debug, Default, Clone, Copy)]
@@ -15,7 +22,7 @@ pub struct PrimaryCamera;
     VolumetricFog {
         step_count: 64,
         ambient_intensity: 0.,
-        jitter: 1.,
+        jitter: 0.64,
         ..default()
     },
 )]

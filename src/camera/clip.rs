@@ -1,9 +1,3 @@
-use bevy::{
-    core_pipeline::prepass::{AlphaMask3dPrepass, Opaque3dPrepass},
-    ecs::system::lifetimeless::SRes,
-    render::render_resource::BufferDescriptor,
-};
-
 use crate::prelude::*;
 
 pub type ClipMaterial = ExtendedMaterial<StandardMaterial, Clip>;
